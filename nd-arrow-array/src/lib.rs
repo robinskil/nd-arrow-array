@@ -32,6 +32,18 @@ impl Deref for NdArrowArray {
     }
 }
 
+impl AsRef<NdArrowArray> for NdArrowArray {
+    fn as_ref(&self) -> &NdArrowArray {
+        self
+    }
+}
+
+impl AsMut<NdArrowArray> for NdArrowArray {
+    fn as_mut(&mut self) -> &mut NdArrowArray {
+        self
+    }
+}
+
 impl NdArrowArray {
     pub fn find_broadcast_shape<A: AsRef<NdArrowArray>, V: AsRef<[A]>>(
         arrays: V,
