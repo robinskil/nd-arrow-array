@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use arrow::{
-    array::{Array, ArrayRef, BooleanArray, NullArray, PrimitiveArray, StringArray},
+    array::{array, Array, ArrayRef, BooleanArray, NullArray, PrimitiveArray, StringArray},
     buffer::{BooleanBuffer, MutableBuffer, NullBuffer},
 };
 use explode::ExplodeArgs;
@@ -33,6 +33,26 @@ impl Deref for NdArrowArray {
 }
 
 impl NdArrowArray {
+    pub fn find_broadcast_shape<A: AsRef<NdArrowArray>, V: AsRef<[A]>>(
+        arrays: V,
+    ) -> Result<shape::Shape, String> {
+        let arrays = arrays.as_ref();
+        let mut max_shape = arrays[0].as_ref().shape().clone();
+        for array in arrays.iter().skip(1) {
+            match max_shape.partial_cmp(&array.as_ref().shape()) {
+                Some(std::cmp::Ordering::Less) => {
+                    max_shape = array.as_ref().shape().clone();
+                }
+                Some(std::cmp::Ordering::Greater) => {}
+                Some(std::cmp::Ordering::Equal) => {}
+                None => {
+                    return Err("Shapes are not comparable".to_string());
+                }
+            }
+        }
+
+        Ok(max_shape)
+    }
     /// Creates a new NdArrowArray from an Arrow array reference and a specified shape.
     ///
     /// # Arguments
@@ -51,8 +71,8 @@ impl NdArrowArray {
     /// # Returns
     ///
     /// A cloned `Shape` describing the dimensions of the array.
-    pub fn shape(&self) -> shape::Shape {
-        self.shape.clone()
+    pub fn shape(&self) -> &shape::Shape {
+        &self.shape
     }
     /// Reshapes this `NdArrowArray` to the specified `target_shape`.
     /// If the array is scalar, it expands the single value to match the new shape. Otherwise, it
@@ -65,7 +85,7 @@ impl NdArrowArray {
     /// # Returns
     ///
     /// A new `NdArrowArray` instance with the updated shape.
-    pub fn reshape(&self, target_shape: &shape::Shape) -> Self {
+    pub fn broadcast(&self, target_shape: &shape::Shape) -> Self {
         if self.shape.is_scalar() {
             let arrow_array = fast_scalar_explode(&self.arrow_array, target_shape);
             Self::new(arrow_array, target_shape.clone())

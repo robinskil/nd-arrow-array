@@ -67,6 +67,10 @@ impl Shape {
         }
     }
 
+    pub fn dimensions(&self) -> &[Dimension] {
+        &self.dimensions
+    }
+
     pub fn flat_size(&self) -> usize {
         self.shape_size.iter().product()
     }
