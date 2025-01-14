@@ -127,15 +127,19 @@ fn explode_primitive_impl<T: arrow::array::ArrowPrimitiveType>(
     array: PrimitiveArray<T>,
     explode_args: ExplodeArgs,
 ) -> PrimitiveArray<T> {
-    let repeated_elems = array
-        .into_iter()
-        .flat_map(|v| std::iter::repeat(v).take(explode_args.repeat_elems));
+    let mut builder = arrow::array::PrimitiveBuilder::<T>::with_capacity(
+        array.len() * explode_args.repeat_elems * explode_args.repeat_slices,
+    );
 
-    let repeated_slices = repeated_elems
-        .flat_map(|v| std::iter::repeat(v).take(explode_args.repeat_slices))
-        .flatten();
+    for _ in 0..explode_args.repeat_slices {
+        for v in array.iter() {
+            for _ in 0..explode_args.repeat_elems {
+                builder.append_option(v);
+            }
+        }
+    }
 
-    PrimitiveArray::from_iter_values(repeated_slices)
+    builder.finish()
 }
 
 fn explode_null_buffer(buffer: &NullBuffer, explode_args: ExplodeArgs) -> NullBuffer {
