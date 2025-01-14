@@ -25,6 +25,8 @@ impl PartialOrd for Shape {
                         .is_some()
                 {
                     return Some(std::cmp::Ordering::Less);
+                } else if self.dimensions.is_empty() {
+                    return Some(std::cmp::Ordering::Less);
                 } else {
                     return None;
                 }
@@ -36,6 +38,8 @@ impl PartialOrd for Shape {
                         .position(|d| d == &other.dimensions[0])
                         .is_some()
                 {
+                    return Some(std::cmp::Ordering::Greater);
+                } else if other.dimensions.is_empty() {
                     return Some(std::cmp::Ordering::Greater);
                 } else {
                     return None;
