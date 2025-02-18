@@ -270,6 +270,10 @@ fn fast_null_buffer_scalar_explode(buffer: &NullBuffer, new_len: usize) -> NullB
 
 #[inline(always)]
 fn fast_boolean_scalar_explode(buffer: &BooleanBuffer, new_len: usize) -> BooleanBuffer {
+    if buffer.is_empty() {
+        return BooleanBuffer::new_unset(new_len);
+    }
+
     if buffer.value(0) {
         BooleanBuffer::new_set(new_len)
     } else {
@@ -281,6 +285,9 @@ fn fast_primitive_scalar_explode_impl<T: arrow::array::ArrowPrimitiveType>(
     array: &PrimitiveArray<T>,
     new_len: usize,
 ) -> PrimitiveArray<T> {
+    if array.is_empty() || array.is_null(0) {
+        return PrimitiveArray::new_null(new_len);
+    }
     let value = array.value(0);
     let null_buffer = array
         .nulls()
@@ -300,7 +307,7 @@ macro_rules! fast_primitive_scalar_explode {
 }
 
 fn string_scalar_explode(array: &StringArray, new_len: usize) -> StringArray {
-    if array.is_null(0) {
+    if array.is_empty() || array.is_null(0) {
         StringArray::new_null(new_len)
     } else {
         let value = array.value(0);
@@ -309,7 +316,11 @@ fn string_scalar_explode(array: &StringArray, new_len: usize) -> StringArray {
 }
 
 fn fast_scalar_explode(array: &arrow::array::ArrayRef, target_shape: &Shape) -> Arc<dyn Array> {
-    let target_size = target_shape.shape_size.iter().product::<usize>();
+    let mut target_size = target_shape.shape_size.iter().product::<usize>();
+    //If everything is a scalar, we need to make sure we have at least one element
+    if target_size == 0 {
+        target_size = 1;
+    }
 
     match array.data_type() {
         arrow::datatypes::DataType::Null => {
