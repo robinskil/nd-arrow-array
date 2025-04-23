@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arrow = "53.*"
+arrow = "=53.3.0"
+anyhow = "*"
+ndarray = "0.16.1"
+parquet = "=53.3.0"

@@ -7,9 +7,13 @@ use arrow::{
 use explode::ExplodeArgs;
 use shape::Shape;
 
+pub mod array_;
 pub mod dimension;
 pub mod explode;
+pub mod nd_record_batch;
 pub mod shape;
+pub mod stream_reader;
+pub mod stream_writer;
 
 pub mod prelude {
     pub use super::dimension::Dimension;
