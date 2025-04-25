@@ -1,20 +1,21 @@
 use std::{ops::Deref, sync::Arc};
 
 use arrow::{
-    array::{array, Array, ArrayRef, BooleanArray, NullArray, PrimitiveArray, StringArray},
+    array::{Array, ArrayRef, BooleanArray, NullArray, PrimitiveArray, StringArray},
     buffer::{BooleanBuffer, MutableBuffer, NullBuffer},
 };
 use explode::ExplodeArgs;
 use shape::Shape;
 
-pub mod array_;
+pub mod broadcast;
+pub mod consts;
 pub mod dimension;
 pub mod explode;
+pub mod io;
+pub mod nd_array;
 pub mod nd_record_batch;
 pub mod shape;
-pub mod stream_reader;
-pub mod stream_writer;
-
+pub mod version;
 pub mod prelude {
     pub use super::dimension::Dimension;
     pub use super::explode::ExplodeArgs;
