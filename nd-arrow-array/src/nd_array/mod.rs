@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::Array;
+use arrow::array::{Array, ArrayData};
 
 use crate::broadcast::{self, BroadcastResult};
 pub mod arrow_ext;
