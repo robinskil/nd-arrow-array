@@ -68,32 +68,50 @@ impl NdRecordBatch {
     }
 
     pub fn broadcast_to_record_batch(&self) -> Result<RecordBatch, BroadcastingError> {
-        let all_shapes = self
+        let all_dimensions = self
             .arrays
             .iter()
-            .map(|array| array.shape().to_vec())
+            .map(|array| array.dimensions().to_vec())
             .collect::<Vec<_>>();
 
-        let broadcast_shape = broadcast::find_broadcast_shape(&all_shapes).ok_or(
-            BroadcastingError::UnableToFindBroadcastShape(all_shapes.clone()),
-        )?;
+        let broadcast_dimensions = broadcast::find_broadcast_dimensions(&all_dimensions);
 
-        let broadcasted_arrays = self
-            .arrays
-            .iter()
-            .map(|array| array.broadcast(&broadcast_shape))
-            .collect::<Result<Vec<_>, BroadcastingError>>()?;
+        match broadcast_dimensions {
+            Some(target_dimensions) => {
+                let broadcasted_arrays = self
+                    .arrays
+                    .iter()
+                    .map(|array| array.broadcast(&target_dimensions))
+                    .collect::<Result<Vec<_>, BroadcastingError>>()?;
 
-        let fields = self.schema.fields().clone();
-        let mut arrays = Vec::with_capacity(fields.len());
-        for array in broadcasted_arrays {
-            arrays.push(array.values());
+                let fields = self.schema.fields().clone();
+                let mut arrays = Vec::with_capacity(fields.len());
+                for array in broadcasted_arrays {
+                    arrays.push(array.array());
+                }
+
+                Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap())
+            }
+            None => {
+                // If no broadcast dimensions are found, then everything is already the same shape as they are all scalars. We can just return all the arrays as they are.
+                let mut arrays = vec![];
+                let mut fields = vec![];
+
+                for (idx, array) in self.arrays.iter().enumerate() {
+                    let field = self.schema.field(idx).clone();
+                    let updated_field = field.with_data_type(array.dtype().clone());
+                    fields.push(updated_field);
+                    arrays.push(array.array());
+                }
+
+                return Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap());
+            }
         }
-
-        Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap())
     }
 
-    pub fn from_record_batch(record_batch: RecordBatch) -> Result<Self, NdRecordBatchError> {
+    pub fn from_arrow_encoded_record_batch(
+        record_batch: RecordBatch,
+    ) -> Result<Self, NdRecordBatchError> {
         //Check encoding metadata
         let encoding_metadata = record_batch.schema_ref().metadata();
         // Check if the metadata contains the expected key and some version
