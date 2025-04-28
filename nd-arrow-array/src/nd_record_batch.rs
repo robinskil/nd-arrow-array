@@ -166,3 +166,147 @@ impl NdRecordBatch {
         Ok(Self { schema, arrays })
     }
 }
+#[cfg(test)]
+mod tests {
+    use crate::nd_array::{default::DefaultNdArrowArray, NdArrowArray};
+
+    use super::*;
+
+    use arrow::datatypes::{DataType, Float64Type, Int32Type};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_to_arrow_encoded_record_batch() {
+        // Create a simple NdRecordBatch with two arrays
+        let array1 = Arc::new(DefaultNdArrowArray::from_vec::<Int32Type>(
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![("dim1", 2), ("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+        let array2 = Arc::new(DefaultNdArrowArray::from_vec::<Float64Type>(
+            vec![Some(1.1), Some(2.2), Some(3.3), Some(4.4)],
+            vec![("dim1", 2), ("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+
+        let field1 = Field::new("field1", DataType::Int32, false);
+        let field2 = Field::new("field2", DataType::Float64, false);
+        let schema = Arc::new(Schema::new(vec![field1, field2]));
+
+        let nd_record_batch = NdRecordBatch {
+            schema,
+            arrays: vec![array1, array2],
+        };
+
+        // Convert to arrow encoded record batch
+        let arrow_batch = nd_record_batch.to_arrow_encoded_record_batch().unwrap();
+
+        // Verify metadata
+        assert!(arrow_batch
+            .schema_ref()
+            .metadata()
+            .contains_key(consts::ND_ARROW_SCHEMA_ENCODING_KEY));
+        assert_eq!(
+            arrow_batch
+                .schema_ref()
+                .metadata()
+                .get(consts::ND_ARROW_SCHEMA_ENCODING_KEY)
+                .unwrap(),
+            consts::ND_ARROW_SCHEMA_ENCODING_VERSION
+        );
+
+        // Verify column count
+        assert_eq!(arrow_batch.num_columns(), 2);
+        println!("Arrow batch: {:#?}", arrow_batch);
+    }
+
+    #[test]
+    fn test_round_trip_encoding() {
+        // Create a simple NdRecordBatch with two arrays
+        let array1 = Arc::new(DefaultNdArrowArray::from_vec::<Int32Type>(
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![("dim1", 2), ("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+        let array2 = Arc::new(DefaultNdArrowArray::from_vec::<Float64Type>(
+            vec![Some(1.1), Some(2.2), Some(3.3), Some(4.4)],
+            vec![("dim1", 2), ("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+
+        let field1 = Field::new("field1", DataType::Int32, false);
+        let field2 = Field::new("field2", DataType::Float64, false);
+        let schema = Arc::new(Schema::new(vec![field1, field2]));
+
+        let original = NdRecordBatch {
+            schema,
+            arrays: vec![array1, array2],
+        };
+
+        // Convert to arrow and back
+        let arrow_batch = original.to_arrow_encoded_record_batch().unwrap();
+        let roundtrip = NdRecordBatch::from_arrow_encoded_record_batch(arrow_batch).unwrap();
+
+        // Verify schema field count
+        assert_eq!(roundtrip.schema.fields().len(), 2);
+
+        // Verify array count
+        assert_eq!(roundtrip.arrays.len(), 2);
+
+        // Verify dimensions of arrays
+        assert_eq!(
+            roundtrip.arrays[0].dimensions(),
+            vec![("dim1", 2).into(), ("dim2", 2).into()]
+        );
+        assert_eq!(
+            roundtrip.arrays[1].dimensions(),
+            &vec![("dim1", 2).into(), ("dim2", 2).into()]
+        );
+    }
+
+    #[test]
+    fn test_broadcast_to_record_batch() {
+        // Create a simple NdRecordBatch with two arrays
+        let array1 = Arc::new(DefaultNdArrowArray::from_vec::<Int32Type>(
+            vec![Some(1), Some(2), Some(3), Some(4)],
+            vec![("dim1", 2), ("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+        let array2 = Arc::new(DefaultNdArrowArray::from_vec::<Float64Type>(
+            vec![Some(3.3), Some(4.4)],
+            vec![("dim2", 2)],
+        )) as Arc<dyn NdArrowArray>;
+
+        let field1 = Field::new("field1", DataType::Int32, false);
+        let field2 = Field::new("field2", DataType::Float64, false);
+        let schema = Arc::new(Schema::new(vec![field1, field2]));
+
+        let nd_record_batch = NdRecordBatch {
+            schema,
+            arrays: vec![array1, array2],
+        };
+
+        // Broadcast to common shape
+        let result = nd_record_batch.broadcast_to_record_batch().unwrap();
+
+        // Should have 2 columns
+        assert_eq!(result.num_columns(), 2);
+
+        // The result should have 4 elements (2x2)
+        assert_eq!(result.num_rows(), 4);
+
+        println!("Broadcasted RecordBatch: {:#?}", result);
+    }
+
+    #[test]
+    fn test_missing_encoding_metadata() {
+        // Create a record batch without the required metadata
+        let array = arrow::array::Int32Array::from(vec![1, 2, 3, 4]);
+
+        let field = Field::new("field", DataType::Int32, false);
+        let schema = Arc::new(Schema::new(vec![field]));
+        let record_batch = RecordBatch::try_new(schema, vec![Arc::new(array)]).unwrap();
+
+        // Should return an error for missing metadata
+        let result = NdRecordBatch::from_arrow_encoded_record_batch(record_batch);
+        assert!(matches!(
+            result,
+            Err(NdRecordBatchError::MissingEncodingMetadata)
+        ));
+    }
+}
