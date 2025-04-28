@@ -53,6 +53,48 @@ impl DefaultNdArrowArray {
         }
     }
 
+    pub fn from_scalar<T: ArrowPrimitiveType>(value: T::Native) -> Self
+    where
+        PrimitiveArray<T>: From<Vec<Option<T::Native>>>,
+    {
+        Self::from_vec::<T>(vec![Some(value)], SCALAR_DIMENSION)
+    }
+    /// Creates a new scalar array containing a single chrono datetime value
+    ///
+    /// # Parameters
+    /// * `value` - The chrono NaiveDateTime value to store in the array
+    ///
+    /// # Returns
+    /// A new `DefaultNdArrowArray` containing a single timestamp value with nanosecond precision and no dimensions
+    pub fn from_scalar_chrono(value: chrono::NaiveDateTime) -> Self {
+        Self::from_vec_chrono(vec![Some(value)], SCALAR_DIMENSION)
+    }
+
+    /// Creates a new scalar array containing a single timestamp value
+    ///
+    /// # Type Parameters
+    /// * `T` - The Arrow timestamp type (e.g. TimestampSecondType, TimestampMillisecondType)
+    ///
+    /// # Parameters
+    /// * `value` - The native timestamp value for the specified Arrow timestamp type
+    ///
+    /// # Returns
+    /// A new `DefaultNdArrowArray` containing a single timestamp value with no dimensions
+    pub fn from_scalar_timestamp<T: ArrowTimestampType>(value: T::Native) -> Self
+    where
+        PrimitiveArray<T>: From<Vec<Option<T::Native>>>,
+    {
+        Self::from_vec_timestamp(vec![Some(value)], SCALAR_DIMENSION)
+    }
+
+    pub fn from_scalar_str(value: &str) -> Self {
+        Self::from_vec_str(vec![Some(value)], SCALAR_DIMENSION)
+    }
+
+    pub fn from_scalar_byte_slice(value: &[u8]) -> Self {
+        Self::from_byte_slice(vec![Some(value)], SCALAR_DIMENSION)
+    }
+
     /// Creates a new array from a vector of primitive values
     pub fn from_vec<T: ArrowPrimitiveType>(
         vec: Vec<Option<T::Native>>,
