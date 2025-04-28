@@ -16,6 +16,9 @@ pub trait NdArrowArray: Debug {
     fn dtype(&self) -> arrow::datatypes::DataType {
         self.array().data_type().clone()
     }
+    fn generate_field(&self, name: &str) -> arrow::datatypes::Field {
+        arrow::datatypes::Field::new(name, self.dtype(), self.is_nullable())
+    }
     fn is_nullable(&self) -> bool {
         self.array().is_nullable()
     }
@@ -31,8 +34,13 @@ pub trait NdArrowArray: Debug {
         arrow_ext::to_arrow_array(self)
     }
 
-    fn arrow_encoded_type(&self) -> arrow::datatypes::DataType {
+    fn arrow_encoded_dtype(&self) -> arrow::datatypes::DataType {
         arrow_ext::arrow_encoded_dtype(self)
+    }
+
+    fn generate_arrow_encoded_field(&self, name: &str) -> arrow::datatypes::Field {
+        let dtype = self.arrow_encoded_dtype();
+        arrow::datatypes::Field::new(name, dtype, self.is_nullable())
     }
 }
 

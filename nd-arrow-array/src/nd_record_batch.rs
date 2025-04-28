@@ -36,6 +36,19 @@ pub struct NdRecordBatch {
 }
 
 impl NdRecordBatch {
+    pub fn new_from_map(indexmap: indexmap::IndexMap<String, Arc<dyn NdArrowArray>>) -> Self {
+        let schema = indexmap
+            .iter()
+            .map(|(name, array)| array.generate_field(name))
+            .collect::<Vec<_>>();
+
+        let schema = Arc::new(Schema::new(schema));
+
+        let arrays = indexmap.into_iter().map(|(_, array)| array).collect();
+
+        Self { schema, arrays }
+    }
+
     pub fn new(schema: SchemaRef, arrays: Vec<Arc<dyn NdArrowArray>>) -> Self {
         Self { schema, arrays }
     }
@@ -54,7 +67,7 @@ impl NdRecordBatch {
         let encoded_types = self
             .arrays
             .iter()
-            .map(|array| array.arrow_encoded_type())
+            .map(|array| array.arrow_encoded_dtype())
             .collect::<Vec<_>>();
 
         let encoded_fields = self
