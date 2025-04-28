@@ -9,7 +9,7 @@ pub mod arrow_ext;
 pub mod default;
 pub mod dimension;
 
-pub trait NdArrowArray: Debug {
+pub trait NdArrowArray: Debug + Send + Sync + 'static {
     fn shape(&self) -> Vec<usize>;
     fn dimensions(&self) -> &[Dimension];
     fn array(&self) -> Arc<dyn Array>;
