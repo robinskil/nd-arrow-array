@@ -6,7 +6,7 @@ use parquet::{
     arrow::{
         arrow_reader::ArrowReaderOptions,
         async_reader::{AsyncFileReader, ParquetRecordBatchStream},
-        ParquetRecordBatchStreamBuilder,
+        ParquetRecordBatchStreamBuilder, ProjectionMask,
     },
     errors::ParquetError,
 };
@@ -24,6 +24,7 @@ impl<T: AsyncFileReader + 'static> AsyncNdParquetReaderBuilder<T> {
         reader_options: Option<ArrowReaderOptions>,
     ) -> Result<Self, ParquetError> {
         let reader_options = reader_options.unwrap_or_default();
+
         let builder =
             ParquetRecordBatchStreamBuilder::new_with_options(reader, reader_options).await?;
         let simplified_schema =
@@ -91,6 +92,13 @@ impl<T: AsyncFileReader + 'static> AsyncNdParquetReaderBuilder<T> {
         self.builder.metadata()
     }
 
+    pub fn with_projection(mut self, projection: Vec<usize>) -> Result<Self, ParquetError> {
+        let projection_mask = ProjectionMask::roots(self.parquet_schema(), projection.into_iter());
+
+        self.builder = self.builder.with_projection(projection_mask);
+        Ok(self)
+    }
+
     pub fn build(self) -> Result<NdParquetRecordBatchStream<T>, ParquetError> {
         let stream = self.builder.build()?;
         Ok(NdParquetRecordBatchStream { stream })
@@ -123,7 +131,7 @@ impl<T: AsyncFileReader + Unpin + 'static> Stream for NdParquetRecordBatchStream
 }
 
 fn convert_nd_record_batch(batch: RecordBatch) -> Result<RecordBatch, ParquetError> {
-    let nd_batch = NdRecordBatch::from_arrow_encoded_record_batch(batch).map_err(|e| {
+    let nd_batch = NdRecordBatch::from_arrow_encoded_record_batch_impl(batch).map_err(|e| {
         ParquetError::General(format!(
             "Failed to parse record batch to NdRecordBatch: {}",
             e

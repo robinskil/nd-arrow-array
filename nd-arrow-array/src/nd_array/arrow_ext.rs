@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{Array, StructArray},
-    datatypes::Field,
+    datatypes::{DataType, Field},
 };
 
 use crate::consts;
@@ -98,6 +98,46 @@ pub fn try_from_arrow_array(array: &StructArray) -> Result<Arc<dyn NdArrowArray>
         data_array.clone(),
         dimensions,
     )))
+}
+
+pub fn arrow_encoded_dtype<A: NdArrowArray + ?Sized>(array: &A) -> DataType {
+    let inner_array_field = Field::new(consts::VALUES, array.dtype().clone(), false);
+    let list_array_field = Field::new(
+        consts::VALUES,
+        arrow::datatypes::DataType::List(Arc::new(inner_array_field.clone())),
+        false,
+    );
+
+    let dimension_names_field = Field::new(
+        consts::DIMENSION_NAMES,
+        arrow::datatypes::DataType::Utf8,
+        false,
+    );
+    let list_dimension_names_array_field = Field::new(
+        consts::DIMENSION_NAMES,
+        arrow::datatypes::DataType::List(Arc::new(dimension_names_field.clone())),
+        false,
+    );
+
+    let dimension_sizes_field = Field::new(
+        consts::DIMENSION_SIZES,
+        arrow::datatypes::DataType::UInt32,
+        false,
+    );
+    let list_dimension_sizes_array_field = Field::new(
+        consts::DIMENSION_SIZES,
+        arrow::datatypes::DataType::List(Arc::new(dimension_sizes_field.clone())),
+        false,
+    );
+
+    DataType::Struct(
+        vec![
+            list_dimension_names_array_field,
+            list_dimension_sizes_array_field,
+            list_array_field,
+        ]
+        .into(),
+    )
 }
 
 pub fn to_arrow_array<A: NdArrowArray + ?Sized>(

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use arrow::array::Array;
 use dimension::Dimension;
@@ -9,7 +9,7 @@ pub mod arrow_ext;
 pub mod default;
 pub mod dimension;
 
-pub trait NdArrowArray {
+pub trait NdArrowArray: Debug {
     fn shape(&self) -> Vec<usize>;
     fn dimensions(&self) -> &[Dimension];
     fn array(&self) -> Arc<dyn Array>;
@@ -30,8 +30,11 @@ pub trait NdArrowArray {
     fn to_arrow_array(&self) -> Result<Arc<dyn Array>, arrow_ext::ArrowParseError> {
         arrow_ext::to_arrow_array(self)
     }
-}
 
+    fn arrow_encoded_type(&self) -> arrow::datatypes::DataType {
+        arrow_ext::arrow_encoded_dtype(self)
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -29,12 +29,52 @@ pub enum NdRecordBatchError {
     UnsupportedEncodingVersion(String),
 }
 
+#[derive(Debug, Clone)]
 pub struct NdRecordBatch {
     schema: SchemaRef,
     arrays: Vec<Arc<dyn NdArrowArray>>,
 }
 
 impl NdRecordBatch {
+    pub fn new(schema: SchemaRef, arrays: Vec<Arc<dyn NdArrowArray>>) -> Self {
+        Self { schema, arrays }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    pub fn arrow_encoded_schema(&self) -> SchemaRef {
+        let mut encoding_metadata = HashMap::new();
+        encoding_metadata.insert(
+            consts::ND_ARROW_SCHEMA_ENCODING_KEY.to_string(),
+            consts::ND_ARROW_SCHEMA_ENCODING_VERSION.to_string(),
+        );
+
+        let encoded_types = self
+            .arrays
+            .iter()
+            .map(|array| array.arrow_encoded_type())
+            .collect::<Vec<_>>();
+
+        let encoded_fields = self
+            .schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(idx, field)| {
+                let encoded_field = Field::new(
+                    field.name(),
+                    encoded_types[idx].clone(),
+                    field.is_nullable(),
+                );
+                encoded_field
+            })
+            .collect::<Vec<_>>();
+
+        Arc::new(Schema::new_with_metadata(encoded_fields, encoding_metadata))
+    }
+
     pub fn to_arrow_encoded_record_batch(&self) -> Result<RecordBatch, NdRecordBatchError> {
         let mut encoding_metadata = HashMap::new();
         encoding_metadata.insert(
@@ -109,22 +149,9 @@ impl NdRecordBatch {
         }
     }
 
-    pub fn from_arrow_encoded_record_batch(
+    pub fn from_arrow_encoded_record_batch_impl(
         record_batch: RecordBatch,
     ) -> Result<Self, NdRecordBatchError> {
-        //Check encoding metadata
-        let encoding_metadata = record_batch.schema_ref().metadata();
-        // Check if the metadata contains the expected key and some version
-        if let Some(version) = encoding_metadata.get(consts::ND_ARROW_SCHEMA_ENCODING_KEY) {
-            if !validate_version_compatibility(version) {
-                return Err(NdRecordBatchError::UnsupportedEncodingVersion(
-                    version.to_string(),
-                ));
-            }
-        } else {
-            return Err(NdRecordBatchError::MissingEncodingMetadata);
-        }
-
         let array_iter = record_batch.columns().to_vec();
         let field_iter = record_batch.schema().fields().clone();
 
@@ -164,6 +191,25 @@ impl NdRecordBatch {
         let schema = Arc::new(arrow::datatypes::Schema::new(fields));
 
         Ok(Self { schema, arrays })
+    }
+
+    pub fn from_arrow_encoded_record_batch(
+        record_batch: RecordBatch,
+    ) -> Result<Self, NdRecordBatchError> {
+        //Check encoding metadata
+        let encoding_metadata = record_batch.schema_ref().metadata();
+        // Check if the metadata contains the expected key and some version
+        if let Some(version) = encoding_metadata.get(consts::ND_ARROW_SCHEMA_ENCODING_KEY) {
+            if !validate_version_compatibility(version) {
+                return Err(NdRecordBatchError::UnsupportedEncodingVersion(
+                    version.to_string(),
+                ));
+            }
+        } else {
+            return Err(NdRecordBatchError::MissingEncodingMetadata);
+        }
+
+        Self::from_arrow_encoded_record_batch_impl(record_batch)
     }
 }
 #[cfg(test)]
