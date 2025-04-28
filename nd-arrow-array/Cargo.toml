@@ -4,16 +4,16 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-arrow = {version ="=53.3.0"}
-arrow-ipc = {version ="=53.3.0", features = ["zstd"] }
+arrow = {version ="=53.3.*"}
+arrow-ipc = {version ="=53.3.*", features = ["zstd"] }
 anyhow = "*"
 ndarray = "0.16.1"
-parquet = {version ="=53.3.0",features = ["arrow","async"] }
+parquet = {version ="=53.3.*",features = ["arrow","async"] }
 thiserror = "2.0.12"
 chrono = "=0.4.38"
 indexmap = "2.9.0"
 bytes = "1.10.1"
-tokio = { version = "1.44.2", features = ["full"] }
+tokio = { version = "1.43.*", features = ["full"] }
 futures = "0.3.31"
 
 [dev-dependencies]
