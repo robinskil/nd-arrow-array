@@ -150,7 +150,7 @@ pub fn broadcast_array<S: NdArrowArray + ?Sized>(
     target_dimensions: &[Dimension],
 ) -> BroadcastResult<Arc<dyn NdArrowArray>> {
     let dimensions = array.dimensions();
-    let (repeat_element, repeat_slice) =
+    let (repeat_slice, repeat_element) =
         broadcast_reshape_args(dimensions, target_dimensions).ok_or(
             BroadcastingError::InvalidShapes(dimensions.to_vec(), target_dimensions.to_vec()),
         )?;

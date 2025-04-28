@@ -7,6 +7,8 @@ use arrow::{
 
 use super::{dimension::Dimension, NdArrowArray};
 
+pub const SCALAR_DIMENSION: Vec<Dimension> = vec![];
+
 /// A multi-dimensional Arrow array implementation
 pub struct DefaultNdArrowArray {
     /// The underlying Arrow array

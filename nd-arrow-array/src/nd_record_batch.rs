@@ -168,7 +168,10 @@ impl NdRecordBatch {
 }
 #[cfg(test)]
 mod tests {
-    use crate::nd_array::{default::DefaultNdArrowArray, NdArrowArray};
+    use crate::nd_array::{
+        default::{DefaultNdArrowArray, SCALAR_DIMENSION},
+        NdArrowArray,
+    };
 
     use super::*;
 
@@ -271,21 +274,26 @@ mod tests {
             vec![Some(3.3), Some(4.4)],
             vec![("dim2", 2)],
         )) as Arc<dyn NdArrowArray>;
+        let array3 = Arc::new(DefaultNdArrowArray::from_vec::<Float64Type>(
+            vec![Some(0.1)],
+            SCALAR_DIMENSION,
+        )) as Arc<dyn NdArrowArray>;
 
         let field1 = Field::new("field1", DataType::Int32, false);
         let field2 = Field::new("field2", DataType::Float64, false);
-        let schema = Arc::new(Schema::new(vec![field1, field2]));
+        let field3 = Field::new("field3", DataType::Float64, false);
+        let schema = Arc::new(Schema::new(vec![field1, field2, field3]));
 
         let nd_record_batch = NdRecordBatch {
             schema,
-            arrays: vec![array1, array2],
+            arrays: vec![array1, array2, array3],
         };
 
         // Broadcast to common shape
         let result = nd_record_batch.broadcast_to_record_batch().unwrap();
 
         // Should have 2 columns
-        assert_eq!(result.num_columns(), 2);
+        assert_eq!(result.num_columns(), 3);
 
         // The result should have 4 elements (2x2)
         assert_eq!(result.num_rows(), 4);
