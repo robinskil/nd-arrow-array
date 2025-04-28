@@ -14,6 +14,7 @@ pub mod explode;
 pub mod io;
 pub mod nd_array;
 pub mod nd_record_batch;
+pub mod nd_schema;
 pub mod shape;
 pub mod version;
 pub mod prelude {
