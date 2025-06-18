@@ -69,3 +69,9 @@ impl From<(&str, usize)> for Dimension {
         }
     }
 }
+
+impl AsRef<Dimension> for Dimension {
+    fn as_ref(&self) -> &Dimension {
+        self
+    }
+}
