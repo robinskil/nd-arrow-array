@@ -6,6 +6,7 @@ use dimension::Dimension;
 use crate::broadcast::{self, BroadcastResult};
 
 pub mod arrow_ext;
+pub mod chunk;
 pub mod default;
 pub mod dimension;
 
