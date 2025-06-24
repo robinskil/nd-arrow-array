@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayBuilder, ArrayRef, ArrowPrimitiveType, BinaryArray, BinaryBuilder, BooleanArray,
-    BooleanBuilder, PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder,
+    BooleanBuilder, NullArray, NullBuilder, PrimitiveArray, PrimitiveBuilder, StringArray,
+    StringBuilder,
 };
+
+use crate::nd_array::chunk::Chunk;
 /// A little trait to unify `Array` + its matching `ArrayBuilder`.
 pub trait Chunkable {
     /// The concrete array type (e.g. `PrimitiveArray<T>`, `BooleanArray`, `StringArray`, …).
@@ -64,6 +67,23 @@ impl Chunkable for BooleanArray {
     }
 }
 
+impl Chunkable for NullArray {
+    type Array = NullArray;
+    type Builder = NullBuilder; // NullArray is a special case, we can use a PrimitiveBuilder<bool>
+
+    fn builder_with_capacity(_cap: usize) -> Self::Builder {
+        NullBuilder::new()
+    }
+
+    fn append_index(_arr: &Self::Array, _idx: usize, builder: &mut Self::Builder) {
+        builder.append_null();
+    }
+
+    fn finish(mut builder: Self::Builder) -> ArrayRef {
+        Arc::new(builder.finish())
+    }
+}
+
 // ——— Implement for UTF-8 strings ———
 impl Chunkable for StringArray {
     type Array = StringArray;
@@ -106,14 +126,6 @@ impl Chunkable for BinaryArray {
     fn finish(mut builder: Self::Builder) -> ArrayRef {
         Arc::new(builder.finish())
     }
-}
-
-/// A generic chunk descriptor.
-pub struct Chunk {
-    pub origin: Vec<usize>,
-    pub shape: Vec<usize>,
-    pub slices: Vec<(usize, usize)>,
-    pub array: ArrayRef,
 }
 
 /// The one-and-only implementation of the chunking logic.
@@ -223,7 +235,7 @@ pub fn chunk_nd_array_with_meta<C: Chunkable>(
         );
 
         out.push(Chunk {
-            origin: origin.clone(),
+            chunk_indices: origin.clone(),
             shape: sizes,
             slices,
             array: C::finish(builder),

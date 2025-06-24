@@ -1,145 +1,107 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::nd_array::dimension::Dimension;
 
-pub fn compute_aligned_auto_chunks_by_elements(
-    columns: Vec<(String, Vec<Dimension>)>,
+pub fn compute_aligned_auto_chunks(
+    groups: &[Vec<Dimension>],
     target_elements: usize,
-) -> HashMap<String, Vec<Dimension>> {
-    compute_aligned_auto_chunks_by_elements_impl(columns.as_slice(), target_elements)
-}
-
-pub fn compute_aligned_auto_chunks_by_elements_impl<S: AsRef<str>, D: AsRef<Dimension>>(
-    column_shapes: &[(S, Vec<D>)],
-    target_elements: usize,
-) -> HashMap<String, Vec<Dimension>> {
-    let column_shapes = column_shapes
-        .iter()
-        .map(|(col, dims)| {
-            (
-                col.as_ref(),
-                dims.iter().map(|d| d.as_ref()).collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let mut dim_sizes: HashMap<String, usize> = HashMap::new();
-    let mut dim_to_vars: HashMap<String, HashSet<String>> = HashMap::new();
-
-    // Step 1: Collect dimension sizes and dimension-to-variable mapping
-    for (column, dimensions) in &column_shapes {
-        for dimension in dimensions {
-            dim_sizes
-                .entry(dimension.name().to_string())
-                .and_modify(|e| *e = (*e).max(dimension.size()))
-                .or_insert(dimension.size());
-
-            dim_to_vars
-                .entry(dimension.name().to_string())
+) -> Vec<Vec<Dimension>> {
+    // Build a mapping from dimension‐name → list of group‐indices that use it
+    let mut dim_to_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (gi, dims) in groups.iter().enumerate() {
+        for d in dims {
+            dim_to_groups
+                .entry(d.name().to_string())
                 .or_default()
-                .insert(column.to_string());
+                .push(gi);
         }
     }
 
-    // Step 2: Process each variable independently, with partial alignment only
-    let mut per_variable_chunks: HashMap<String, HashMap<String, usize>> = HashMap::new();
-
-    for (column_name, dimensions) in &column_shapes {
-        let dim_list = dimensions;
-        let size_list: Vec<f64> = dim_list.iter().map(|d| d.size() as f64).collect();
-
-        // Compute aspect ratios
-        let max_size = size_list
+    // Step 1+2+3: per‐group raw chunk computation (same as before)
+    let mut per_group_chunks: Vec<HashMap<String, usize>> = Vec::with_capacity(groups.len());
+    for dims in groups.iter() {
+        let sizes: Vec<f64> = dims.iter().map(|d| d.size() as f64).collect();
+        let max_size = sizes
             .iter()
             .cloned()
             .filter(|&s| s > 1.0)
             .fold(0.0, f64::max)
             .max(1.0);
+        let ratios: Vec<f64> = sizes.iter().map(|&s| s / max_size).collect();
+        let prod_ratios: f64 = ratios.iter().product();
 
-        let ratios: Vec<f64> = size_list.iter().map(|s| s / max_size).collect();
-        let product_of_ratios: f64 = ratios.iter().product();
-
-        let scaling = if product_of_ratios > 0.0 {
-            (target_elements as f64 / product_of_ratios).powf(1.0 / ratios.len() as f64)
+        let scaling = if prod_ratios > 0.0 {
+            (target_elements as f64 / prod_ratios).powf(1.0 / (ratios.len() as f64))
         } else {
             1.0
         };
 
-        // Initial scaled chunk sizes
+        // initial chunks
         let mut chunks: Vec<usize> = ratios
             .iter()
-            .zip(dim_list)
-            .map(|(&r, dim)| {
-                let chunk = (r * scaling).floor() as usize;
-                chunk.clamp(1, dim.size())
+            .zip(dims.iter())
+            .map(|(&r, d)| {
+                let c = (r * scaling).floor() as usize;
+                c.clamp(1, d.size())
             })
             .collect();
 
-        let mut total_chunk_elems: usize = chunks.iter().product();
-
-        // Rescale up if too small
-        if total_chunk_elems < target_elements / 2 {
+        let mut total: usize = chunks.iter().product();
+        // upscale if too small
+        if total < target_elements / 2 {
             let upscale = 2.0;
             chunks = ratios
                 .iter()
-                .zip(dim_list)
-                .map(|(&r, dim)| {
-                    let chunk = (r * scaling * upscale).floor() as usize;
-                    chunk.clamp(1, dim.size())
+                .zip(dims.iter())
+                .map(|(&r, d)| {
+                    let c = (r * scaling * upscale).floor() as usize;
+                    c.clamp(1, d.size())
                 })
                 .collect();
-            total_chunk_elems = chunks.iter().product();
+            total = chunks.iter().product();
+        }
+        // fallback to full sizes
+        if total < target_elements / 2 {
+            chunks = dims.iter().map(|d| d.size()).collect();
         }
 
-        if total_chunk_elems < target_elements / 2 {
-            chunks = dim_list.iter().map(|d| d.size()).collect();
+        // map by name
+        let mut m = HashMap::new();
+        for (d, &c) in dims.iter().zip(chunks.iter()) {
+            m.insert(d.name().to_string(), c);
         }
-
-        let mut chunk_map = HashMap::new();
-        for (dim, &chunk) in dim_list.iter().zip(chunks.iter()) {
-            chunk_map.insert(dim.name().to_string(), chunk);
-        }
-
-        per_variable_chunks.insert(column_name.to_string(), chunk_map);
+        per_group_chunks.push(m);
     }
 
-    // Step 3: Align chunk sizes for shared dimensions only across overlapping variable groups
-    let mut final_chunks: HashMap<String, Vec<Dimension>> = HashMap::new();
+    // Step 4: align across groups on shared dims
+    let mut result = Vec::with_capacity(groups.len());
+    for (gi, dims) in groups.iter().enumerate() {
+        // clone this group’s chunk map
+        let mut cm = per_group_chunks[gi].clone();
 
-    for (column, dimensions) in column_shapes {
-        let mut chunk_map = per_variable_chunks[column].clone();
-
-        for dim in dimensions {
-            // Find other variables that use this dim
-            if let Some(others) = dim_to_vars.get(dim.name()) {
-                let mut max_shared_chunk = chunk_map[dim.name()];
-
-                for other in others {
-                    if other == column {
-                        continue;
-                    }
-                    if let Some(other_chunk) = per_variable_chunks
-                        .get(other)
-                        .and_then(|m| m.get(dim.name()))
-                    {
-                        max_shared_chunk = max_shared_chunk.min(*other_chunk);
-                    }
-                }
-
-                chunk_map.insert(dim.name().to_string(), max_shared_chunk);
+        for d in dims {
+            if let Some(peers) = dim_to_groups.get(d.name()) {
+                // find the minimum chunk across all groups that share this dim
+                let min_chunk = peers
+                    .iter()
+                    .filter_map(|&other_gi| per_group_chunks.get(other_gi))
+                    .filter_map(|m| m.get(d.name()))
+                    .cloned()
+                    .min()
+                    .unwrap_or(cm[d.name()]);
+                cm.insert(d.name().to_string(), min_chunk);
             }
         }
 
-        final_chunks.insert(
-            column.to_string(),
-            chunk_map
-                .into_iter()
-                .map(|(k, v)| Dimension::new(&k, v))
-                .collect(),
-        );
+        // rebuild Vec<Dimension> in original order
+        let aligned = dims
+            .iter()
+            .map(|d| Dimension::new(d.name(), cm[d.name()]))
+            .collect();
+        result.push(aligned);
     }
 
-    final_chunks
+    result
 }
 
 #[cfg(test)]
@@ -148,31 +110,19 @@ mod tests {
 
     #[test]
     fn test_2() {
-        let columns: Vec<(String, Vec<Dimension>)> = vec![
-            (
-                "temp".into(),
-                vec![
-                    Dimension::new("time", 4),
-                    Dimension::new("x", 4),
-                    Dimension::new("y", 8),
-                ],
-            ),
-            ("time_series".into(), vec![Dimension::new("time", 4)]),
-            ("rand".into(), vec![Dimension::new("lp", 2)]),
-            (
-                "station".into(),
-                vec![Dimension::new("time", 4), Dimension::new("lp", 2)],
-            ),
+        let columns: Vec<Vec<Dimension>> = vec![
+            vec![
+                Dimension::new("N_PROF", 44452),
+                Dimension::new("N_LEVELS", 3660),
+            ],
+            vec![Dimension::new("N_PROF", 44452)],
         ];
 
-        let chunk_map = compute_aligned_auto_chunks_by_elements_impl(columns.as_slice(), 40);
+        let chunk_map = compute_aligned_auto_chunks(columns.as_slice(), 128 * 1024);
         // 8M elements max per chunk
 
-        for (var, chunks) in chunk_map {
-            println!("Variable: {var}");
-            for dim in chunks {
-                println!("  {:#?}", dim);
-            }
+        for (i, chunk) in chunk_map.iter().enumerate() {
+            println!("Chunk {}: {:?}", i, chunk);
         }
     }
 }
