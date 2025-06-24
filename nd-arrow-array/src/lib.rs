@@ -11,7 +11,6 @@ pub mod broadcast;
 pub mod consts;
 pub mod dimension;
 pub mod explode;
-pub mod io;
 pub mod nd_array;
 pub mod nd_record_batch;
 pub mod nd_schema;
