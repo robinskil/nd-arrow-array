@@ -1,9 +1,12 @@
 use std::{fmt::Debug, sync::Arc};
 
-use arrow::array::Array;
+use arrow::{array::Array, compute::CastOptions};
 use dimension::Dimension;
 
-use crate::broadcast::{self, BroadcastResult};
+use crate::{
+    broadcast::{self, BroadcastResult},
+    nd_array::default::DefaultNdArrowArray,
+};
 
 pub mod arrow_ext;
 pub mod chunk;
@@ -11,14 +14,44 @@ pub mod default;
 pub mod dimension;
 
 pub trait NdArrowArray: Debug + Send + Sync + 'static {
+    ///
+    /// Cast the array to a new data type, optionally using cast options.
+    /// ///
+    /// # Arguments
+    /// * `data_type` - The target data type to cast to.
+    /// * `cast_options` - Optional cast options to control the casting behavior.
+    /// # Returns
+    /// A new `NdArrowArray` with the specified data type. (Using the default `DefaultNdArrowArray` implementation)
+    fn cast(
+        &self,
+        data_type: arrow::datatypes::DataType,
+        cast_options: Option<CastOptions>,
+    ) -> Result<Arc<dyn NdArrowArray>, arrow::error::ArrowError> {
+        let inner_array = arrow::compute::kernels::cast::cast_with_options(
+            self.array().as_ref(),
+            &data_type,
+            &cast_options.unwrap_or_default(),
+        )?;
+
+        let new_array = DefaultNdArrowArray::new(inner_array, self.dimensions().to_vec());
+
+        Ok(Arc::new(new_array) as Arc<dyn NdArrowArray>)
+    }
     fn shape(&self) -> Vec<usize>;
     fn dimensions(&self) -> &[Dimension];
     fn array(&self) -> Arc<dyn Array>;
+    fn data_type(&self) -> arrow::datatypes::DataType {
+        self.array().data_type().clone()
+    }
+    #[deprecated(note = "Use `data_type` instead. This method will be removed in future versions.")]
     fn dtype(&self) -> arrow::datatypes::DataType {
         self.array().data_type().clone()
     }
+    #[deprecated(
+        note = "This method is deprecated and will be removed in future versions. Use `data_type` instead."
+    )]
     fn generate_field(&self, name: &str) -> arrow::datatypes::Field {
-        arrow::datatypes::Field::new(name, self.dtype(), self.is_nullable())
+        arrow::datatypes::Field::new(name, self.data_type(), self.is_nullable())
     }
     fn is_nullable(&self) -> bool {
         self.array().is_nullable()
@@ -43,6 +76,21 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
         let dtype = self.arrow_encoded_dtype();
         arrow::datatypes::Field::new(name, dtype, self.is_nullable())
     }
+}
+
+pub fn new_from_arrow_array<D: Into<Dimension>>(
+    array: Arc<dyn Array>,
+    dimensions: Vec<D>,
+) -> Arc<dyn NdArrowArray> {
+    Arc::new(DefaultNdArrowArray::new(array, dimensions))
+}
+
+pub fn new_null_nd_arrow_array(len: usize) -> Arc<dyn NdArrowArray> {
+    let null_array = arrow::array::NullArray::new(len);
+    Arc::new(DefaultNdArrowArray::new(
+        Arc::new(null_array) as Arc<dyn Array>,
+        Vec::<(String, usize)>::new(),
+    ))
 }
 
 #[cfg(test)]
