@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{Array, StructArray},
-    datatypes::{DataType, Field},
+    array::{Array, AsArray, StructArray},
+    datatypes::{DataType, Field, UInt32Type},
 };
 
 use crate::consts;
@@ -21,8 +21,14 @@ pub enum ArrowParseError {
     ShapeAndArrayLengthMismatch { expected: usize, got: usize },
     #[error("Failed to downcast Arrow Array to Encoded ListArray.")]
     ListDowncastError,
+    #[error("Failed to downcast Arrow Array to StructArray.")]
+    StructDowncastError,
     #[error("Number of dimension sizes does not match the number of dimension names.")]
     DimensionSizeMismatch,
+    #[error("Expected {expected} dimension sizes, but got {got}.")]
+    ExpectedDimensionSizes { expected: usize, got: usize },
+    #[error("Expected {expected} dimension names, but got {got}.")]
+    ExpectedDimensionNames { expected: usize, got: usize },
 }
 
 pub fn try_from_arrow_array(array: &StructArray) -> Result<Arc<dyn NdArrowArray>, ArrowParseError> {
@@ -33,10 +39,17 @@ pub fn try_from_arrow_array(array: &StructArray) -> Result<Arc<dyn NdArrowArray>
         .downcast_ref::<arrow::array::ListArray>()
         .ok_or(ArrowParseError::ListDowncastError)?;
 
-    let dimension_names = dimension_names_list
-        .values()
-        .as_any()
-        .downcast_ref::<arrow::array::StringArray>()
+    let dimension_names_len = dimension_names_list.len();
+    if dimension_names_len != 1 {
+        return Err(ArrowParseError::ExpectedDimensionNames {
+            expected: 1,
+            got: dimension_names_len,
+        });
+    }
+
+    let dimension_names = dimension_names_list.value(0);
+    let dimension_names = dimension_names
+        .as_string_opt::<i32>()
         .ok_or(ArrowParseError::NoDimensionNames)?;
 
     let dimension_names = dimension_names
@@ -51,13 +64,20 @@ pub fn try_from_arrow_array(array: &StructArray) -> Result<Arc<dyn NdArrowArray>
         .downcast_ref::<arrow::array::ListArray>()
         .ok_or(ArrowParseError::ListDowncastError)?;
 
-    let dimension_sizes = dimension_sizes_list
-        .values()
-        .as_any()
-        .downcast_ref::<arrow::array::UInt32Array>()
+    let dimension_sizes_len = dimension_sizes_list.len();
+    if dimension_sizes_len != 1 {
+        return Err(ArrowParseError::ExpectedDimensionSizes {
+            expected: 1,
+            got: dimension_sizes_len,
+        });
+    }
+
+    let dimension_sizes = dimension_sizes_list.value(0);
+    let dimension_sizes_prim = dimension_sizes
+        .as_primitive_opt::<UInt32Type>()
         .ok_or(ArrowParseError::NoDimensionSizes)?;
 
-    let shape = dimension_sizes
+    let shape = dimension_sizes_prim
         .iter()
         .filter_map(|v| v.map(|u| u as usize))
         .collect::<Vec<_>>();

@@ -1,6 +1,9 @@
 use std::{fmt::Debug, sync::Arc};
 
-use arrow::{array::Array, compute::CastOptions};
+use arrow::{
+    array::{Array, AsArray},
+    compute::CastOptions,
+};
 use dimension::Dimension;
 
 use crate::{
@@ -91,6 +94,22 @@ pub fn new_null_nd_arrow_array(len: usize) -> Arc<dyn NdArrowArray> {
         Arc::new(null_array) as Arc<dyn Array>,
         Vec::<(String, usize)>::new(),
     ))
+}
+
+pub fn new_from_arrow_encoded_array(
+    array: Arc<dyn Array>,
+) -> Result<Arc<dyn NdArrowArray>, arrow_ext::ArrowParseError> {
+    let struct_array = array
+        .as_struct_opt()
+        .ok_or(arrow_ext::ArrowParseError::StructDowncastError)?;
+
+    arrow_ext::try_from_arrow_array(struct_array)
+}
+
+pub fn to_arrow_encoded_array(
+    array: &dyn NdArrowArray,
+) -> Result<Arc<dyn Array>, arrow_ext::ArrowParseError> {
+    array.to_arrow_array()
 }
 
 #[cfg(test)]
