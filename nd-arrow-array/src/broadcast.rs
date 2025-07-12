@@ -47,7 +47,7 @@ pub fn find_broadcast_dimensions<S: AsRef<[Dimension]>>(
     max_dimension_array
 }
 
-fn broadcast_reshape_args(
+pub fn broadcast_reshape_args(
     dimensions: &[Dimension],
     target_dimensions: &[Dimension],
 ) -> Option<(usize, usize)> {
@@ -149,14 +149,14 @@ pub fn broadcast_array<S: NdArrowArray + ?Sized>(
     array: &S,
     target_dimensions: &[Dimension],
 ) -> BroadcastResult<Arc<dyn NdArrowArray>> {
-    let dimensions = array.dimensions();
+    let dimensions = array.dimensions_ref();
     let (repeat_slice, repeat_element) =
-        broadcast_reshape_args(dimensions, target_dimensions).ok_or(
+        broadcast_reshape_args(dimensions.as_ref(), target_dimensions).ok_or(
             BroadcastingError::InvalidShapes(dimensions.to_vec(), target_dimensions.to_vec()),
         )?;
 
     let broadcasted_array =
-        broadcast_array_impl(array.array().as_ref(), repeat_element, repeat_slice)?;
+        broadcast_array_impl(array.values_array().as_ref(), repeat_element, repeat_slice)?;
 
     Ok(Arc::new(DefaultNdArrowArray::new(
         broadcasted_array,
@@ -263,6 +263,11 @@ pub fn broadcast_array_impl(
                 .downcast_ref::<arrow::array::BooleanArray>()
                 .unwrap();
             let result = broadcast_boolean_array(array, repeat_element_count, repeat_slice_count)?;
+            Ok(Arc::new(result))
+        }
+        arrow::datatypes::DataType::Null => {
+            let new_len = array.len() * repeat_slice_count * repeat_element_count;
+            let result = arrow::array::NullArray::new(new_len);
             Ok(Arc::new(result))
         }
         arrow::datatypes::DataType::Timestamp(unit, _) => match unit {

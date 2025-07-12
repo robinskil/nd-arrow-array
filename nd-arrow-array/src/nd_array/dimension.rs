@@ -75,3 +75,24 @@ impl AsRef<Dimension> for Dimension {
         self
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DimensionRef<'a> {
+    pub name: &'a str,
+    pub size: usize,
+}
+
+impl<'a> From<&'a Dimension> for DimensionRef<'a> {
+    fn from(dim: &'a Dimension) -> Self {
+        Self {
+            name: dim.name(),
+            size: dim.size(),
+        }
+    }
+}
+
+impl<'a> From<(&'a str, usize)> for DimensionRef<'a> {
+    fn from((name, size): (&'a str, usize)) -> Self {
+        Self { name, size }
+    }
+}

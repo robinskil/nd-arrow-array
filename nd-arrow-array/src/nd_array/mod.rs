@@ -1,16 +1,19 @@
 use std::{fmt::Debug, sync::Arc};
 
 use arrow::{
-    array::{Array, AsArray},
+    array::{Array, AsArray, Scalar},
     compute::CastOptions,
 };
 use dimension::Dimension;
 
 use crate::{
     broadcast::{self, BroadcastResult},
-    nd_array::default::DefaultNdArrowArray,
+    nd_array::{
+        arrow_backed::NdArrowArrayImpl, default::DefaultNdArrowArray, dimension::DimensionRef,
+    },
 };
 
+pub mod arrow_backed;
 pub mod arrow_ext;
 pub mod chunk;
 pub mod default;
@@ -40,8 +43,27 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
 
         Ok(Arc::new(new_array) as Arc<dyn NdArrowArray>)
     }
+    /// Returns the shape of the array as a vector of usize.
     fn shape(&self) -> Vec<usize>;
-    fn dimensions(&self) -> &[Dimension];
+
+    /// Returns the dimensions of the array.
+    fn dimensions_ref<'a>(&'a self) -> std::borrow::Cow<'a, [Dimension]> {
+        std::borrow::Cow::Borrowed(self.dimensions())
+    }
+    #[deprecated(
+        note = "This method is deprecated and will be removed in future versions. Use `dimensions_ref` instead."
+    )]
+    fn dimensions(&self) -> &[Dimension] {
+        unimplemented!("Use `dimensions_ref` instead")
+    }
+
+    /// Returns the actual values as a flattened array.
+    fn values_array(&self) -> Arc<dyn Array> {
+        self.array()
+    }
+    #[deprecated(
+        note = "This method is deprecated and will be removed in future versions. Use `values_array` instead."
+    )]
     fn array(&self) -> Arc<dyn Array>;
     fn data_type(&self) -> arrow::datatypes::DataType {
         self.array().data_type().clone()
@@ -85,25 +107,36 @@ pub fn new_from_arrow_array<D: Into<Dimension>>(
     array: Arc<dyn Array>,
     dimensions: Vec<D>,
 ) -> Arc<dyn NdArrowArray> {
-    Arc::new(DefaultNdArrowArray::new(array, dimensions))
-}
-
-pub fn new_null_nd_arrow_array(len: usize) -> Arc<dyn NdArrowArray> {
-    let null_array = arrow::array::NullArray::new(len);
-    Arc::new(DefaultNdArrowArray::new(
-        Arc::new(null_array) as Arc<dyn Array>,
-        Vec::<(String, usize)>::new(),
+    Arc::new(NdArrowArrayImpl::new(
+        array,
+        dimensions
+            .into_iter()
+            .map(|d| d.into())
+            .map(|d: Dimension| (d.name.clone(), d.size()))
+            .collect(),
     ))
 }
 
-pub fn new_from_arrow_encoded_array(
-    array: Arc<dyn Array>,
-) -> Result<Arc<dyn NdArrowArray>, arrow_ext::ArrowParseError> {
-    let struct_array = array
-        .as_struct_opt()
-        .ok_or(arrow_ext::ArrowParseError::StructDowncastError)?;
+pub fn new_null_nd_arrow_array(len: usize) -> Arc<dyn NdArrowArray> {
+    Arc::new(NdArrowArrayImpl::null(
+        arrow::datatypes::DataType::Null,
+        len,
+    ))
+}
 
-    arrow_ext::try_from_arrow_array(struct_array)
+pub fn new_null_nd_arrow_array_with_dtype(
+    data_type: arrow::datatypes::DataType,
+    len: usize,
+) -> Arc<dyn NdArrowArray> {
+    Arc::new(NdArrowArrayImpl::null(data_type, len))
+}
+
+pub fn new_from_arrow_encoded_array(
+    array: Scalar<Arc<dyn Array>>,
+) -> Result<Arc<dyn NdArrowArray>, arrow_ext::ArrowParseError> {
+    NdArrowArrayImpl::try_from_arrow(array)
+        .map(|nd_array_impl| Arc::new(nd_array_impl) as Arc<dyn NdArrowArray>)
+        .map_err(|e| arrow_ext::ArrowParseError::from(e))
 }
 
 pub fn to_arrow_encoded_array(

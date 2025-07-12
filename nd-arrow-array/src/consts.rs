@@ -4,4 +4,4 @@ pub const DIMENSIONS: &str = "dimensions";
 pub const VALUES: &str = "values";
 pub const ND_ARROW_SCHEMA_ENCODING_KEY: &str = "nd-arrow-array-schema";
 pub const ND_ARROW_SCHEMA_ENCODING_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const PARQUET_EXTENSION: &str = "ndparquet";
+
