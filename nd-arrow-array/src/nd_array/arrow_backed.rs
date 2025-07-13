@@ -142,6 +142,10 @@ impl NdArrowArray for NdArrowArrayImpl {
             .collect::<Vec<_>>()
     }
 
+    fn is_null(&self) -> bool {
+        self.arrow_backed.is_null(0)
+    }
+
     fn dimensions(&self) -> &[super::dimension::Dimension] {
         unimplemented!()
     }

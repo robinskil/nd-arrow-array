@@ -173,6 +173,10 @@ impl NdArrowArray for DefaultNdArrowArray {
     fn array(&self) -> Arc<dyn Array> {
         self.inner_array.clone()
     }
+
+    fn is_null(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

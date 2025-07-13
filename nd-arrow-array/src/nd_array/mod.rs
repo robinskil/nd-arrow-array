@@ -33,6 +33,10 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
         data_type: arrow::datatypes::DataType,
         cast_options: Option<CastOptions>,
     ) -> Result<Arc<dyn NdArrowArray>, arrow::error::ArrowError> {
+        if self.is_null() {
+            return Ok(new_null_nd_arrow_array_with_dtype(data_type, 1));
+        }
+
         let inner_array = arrow::compute::kernels::cast::cast_with_options(
             self.values_array().as_ref(),
             &data_type,
@@ -49,6 +53,7 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
 
         Ok(Arc::new(new_array) as Arc<dyn NdArrowArray>)
     }
+    fn is_null(&self) -> bool;
     /// Returns the shape of the array as a vector of usize.
     fn shape(&self) -> Vec<usize>;
 
