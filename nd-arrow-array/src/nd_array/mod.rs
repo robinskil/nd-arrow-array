@@ -34,12 +34,12 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
         cast_options: Option<CastOptions>,
     ) -> Result<Arc<dyn NdArrowArray>, arrow::error::ArrowError> {
         let inner_array = arrow::compute::kernels::cast::cast_with_options(
-            self.array().as_ref(),
+            self.values_array().as_ref(),
             &data_type,
             &cast_options.unwrap_or_default(),
         )?;
 
-        let new_array = DefaultNdArrowArray::new(inner_array, self.dimensions().to_vec());
+        let new_array = DefaultNdArrowArray::new(inner_array, self.dimensions_ref().to_vec());
 
         Ok(Arc::new(new_array) as Arc<dyn NdArrowArray>)
     }
