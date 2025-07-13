@@ -39,7 +39,13 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
             &cast_options.unwrap_or_default(),
         )?;
 
-        let new_array = DefaultNdArrowArray::new(inner_array, self.dimensions_ref().to_vec());
+        let new_array = NdArrowArrayImpl::new(
+            inner_array,
+            self.dimensions_ref()
+                .iter()
+                .map(|d| (d.name().to_string(), d.size()))
+                .collect(),
+        );
 
         Ok(Arc::new(new_array) as Arc<dyn NdArrowArray>)
     }
@@ -79,7 +85,7 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
         arrow::datatypes::Field::new(name, self.data_type(), self.is_nullable())
     }
     fn is_nullable(&self) -> bool {
-        self.array().is_nullable()
+        true
     }
     fn is_scalar(&self) -> bool {
         self.shape().len() == 0

@@ -5,7 +5,7 @@ use arrow::{
         Array, ArrayData, ArrayRef, AsArray, ListArray, NullArray, Scalar, StringBuilder,
         StructArray, UInt32Builder,
     },
-    buffer::Buffer,
+    buffer::{Buffer, NullBuffer},
     datatypes::{DataType, Field, FieldRef, UInt32Type},
 };
 
@@ -80,7 +80,7 @@ impl NdArrowArrayImpl {
             arrow_backed: StructArray::new(
                 struct_fields.into(),
                 vec![names_list, sizes_list, values_list],
-                None,
+                Some(NullBuffer::new_valid(1)),
             ),
         }
     }
@@ -216,5 +216,13 @@ impl NdArrowArray for NdArrowArrayImpl {
         );
 
         Ok(Arc::new(broadcasted_nd_array))
+    }
+
+    fn arrow_encoded_dtype(&self) -> arrow::datatypes::DataType {
+        self.arrow_backed.data_type().clone()
+    }
+
+    fn is_nullable(&self) -> bool {
+        true
     }
 }
