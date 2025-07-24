@@ -206,7 +206,8 @@ impl NdArrowArray for NdArrowArrayImpl {
                 repeat_slice_count,
             )?;
 
-            broadcasted_array
+            arrow::compute::cast(broadcasted_array.as_ref(), &self.data_type())
+                .expect("Failed to cast broadcasted array")
         } else {
             broadcast_array_impl(values.as_ref(), repeat_element_count, repeat_slice_count)?
         };
