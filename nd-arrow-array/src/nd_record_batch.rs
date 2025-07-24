@@ -124,7 +124,7 @@ impl NdRecordBatch {
         let all_dimensions = self
             .arrays
             .iter()
-            .map(|array| array.dimensions().to_vec())
+            .map(|array| array.dimensions_ref().to_owned())
             .collect::<Vec<_>>();
 
         let broadcast_dimensions = broadcast::find_broadcast_dimensions(&all_dimensions);
@@ -140,7 +140,7 @@ impl NdRecordBatch {
                 let fields = self.schema.fields().clone();
                 let mut arrays = Vec::with_capacity(fields.len());
                 for array in broadcasted_arrays {
-                    arrays.push(array.array());
+                    arrays.push(array.values_array());
                 }
 
                 Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap())
@@ -152,9 +152,9 @@ impl NdRecordBatch {
 
                 for (idx, array) in self.arrays.iter().enumerate() {
                     let field = self.schema.field(idx).clone();
-                    let updated_field = field.with_data_type(array.dtype().clone());
+                    let updated_field = field.with_data_type(array.data_type().clone());
                     fields.push(updated_field);
-                    arrays.push(array.array());
+                    arrays.push(array.values_array());
                 }
 
                 return Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap());
