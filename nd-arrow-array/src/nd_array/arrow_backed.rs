@@ -102,7 +102,7 @@ impl NdArrowArrayImpl {
         Arc::new(ListArray::from(data))
     }
 
-    pub fn null(data_type: DataType, len: usize) -> Self {
+    pub fn null_array(data_type: DataType) -> Self {
         let struct_fields = vec![
             FieldRef::new(Field::new(
                 "dimension_names",
@@ -121,7 +121,7 @@ impl NdArrowArrayImpl {
             )),
         ];
         Self {
-            arrow_backed: StructArray::new_null(struct_fields.into(), len),
+            arrow_backed: StructArray::new_null(struct_fields.into(), 1),
         }
     }
 

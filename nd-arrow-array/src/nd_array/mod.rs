@@ -1,16 +1,14 @@
 use std::{fmt::Debug, sync::Arc};
 
 use arrow::{
-    array::{Array, AsArray, Scalar},
+    array::{Array, Scalar},
     compute::CastOptions,
 };
 use dimension::Dimension;
 
 use crate::{
     broadcast::{self, BroadcastResult},
-    nd_array::{
-        arrow_backed::NdArrowArrayImpl, default::DefaultNdArrowArray, dimension::DimensionRef,
-    },
+    nd_array::arrow_backed::NdArrowArrayImpl,
 };
 
 pub mod arrow_backed;
@@ -34,7 +32,7 @@ pub trait NdArrowArray: Debug + Send + Sync + 'static {
         cast_options: Option<CastOptions>,
     ) -> Result<Arc<dyn NdArrowArray>, arrow::error::ArrowError> {
         if self.is_null() {
-            return Ok(new_null_nd_arrow_array_with_dtype(data_type, 1));
+            return Ok(new_null_nd_arrow_array(data_type));
         }
 
         let inner_array = arrow::compute::kernels::cast::cast_with_options(
@@ -128,18 +126,8 @@ pub fn new_from_arrow_array<D: Into<Dimension>>(
     ))
 }
 
-pub fn new_null_nd_arrow_array(len: usize) -> Arc<dyn NdArrowArray> {
-    Arc::new(NdArrowArrayImpl::null(
-        arrow::datatypes::DataType::Null,
-        len,
-    ))
-}
-
-pub fn new_null_nd_arrow_array_with_dtype(
-    data_type: arrow::datatypes::DataType,
-    len: usize,
-) -> Arc<dyn NdArrowArray> {
-    Arc::new(NdArrowArrayImpl::null(data_type, len))
+pub fn new_null_nd_arrow_array(data_type: arrow::datatypes::DataType) -> Arc<dyn NdArrowArray> {
+    Arc::new(NdArrowArrayImpl::null_array(data_type))
 }
 
 pub fn new_from_arrow_encoded_array(
