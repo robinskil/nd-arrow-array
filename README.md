@@ -1,45 +1,71 @@
-# N-Dimensional Arrow Arrays
+# nd-arrow-array
 
-## ND Arrow Specification
+N-dimensional arrays as an Arrow extension type.
 
-### Overview
+## Extension type
 
-This document provides the specifications for N-Dimensional Arrow Arrays, detailing their structure, usage, and examples.
+- Name: `nd_arrow.array` (in `ARROW:extension:name`).
+- Metadata: `{"version":1}` (in `ARROW:extension:metadata`).
+- Storage: a `Struct`. Each row holds one complete N-dimensional array.
 
-### Structure
+```text
+Struct {
+  values:    List<T>,        // flat values, C-order (row-major)
+  dim_names: List<Utf8>,     // one name per axis
+  dim_sizes: List<UInt32>,   // one size per axis
+  attrs:     Struct { .. },  // one nullable child per attribute key
+}
+```
 
-- **Dimensions**: Each array can have multiple dimensions.
-- **Elements**: The elements within the array can be of any arrow logical types.
+### Rules
 
-### N-Dimensional Arrow Array Representation
+- The field order is fixed: `values`, `dim_names`, `dim_sizes`, `attrs`.
+- `dim_names` and `dim_sizes` have the same length. This length is the rank.
+- The length of `values` is the product of `dim_sizes`.
+- Rank 0 (empty dimension lists) is a scalar with one value.
+- Dimension names are not empty and are unique in a row.
+- Validity of elements is in the null buffer of `values`. There is no fill value.
+- An attribute can be any Arrow type. The `attrs` struct of a column holds the
+  union of the attribute keys of all rows. A null child means that the row does
+  not have that attribute.
+- A null row decodes to a rank-0 null scalar.
 
-- **Data Type**: The array is represented using a struct array type.
-  - **Fields**:
-    - `dimension_names`: The names of each dimension.
-    - `dimension_sizes`: The size of each dimension.
-    - `values`: The actual data stored in the array.
+### Example
 
-- **Example**: A 3D array with dimensions (2, 3, 4) would have:
-  - `dimension_names`: ["dim1", "dim2", "dim3"]
-  - `dimension_sizes`: [2, 3, 4]
-  - `values`: The actual data in a flattened format.
-- **Flattening**: The data is stored in a flattened format, meaning that the multi-dimensional data is represented as a single array.
+A `(time=2, lat=3)` array of `Float64` with `units = "K"`:
 
-### ND Record Batch
+```text
+values:    [0.0, 0.1, 0.2, 1.0, 1.1, 1.2]
+dim_names: ["time", "lat"]
+dim_sizes: [2, 3]
+attrs:     { units: "K" }
+```
 
-- **ND Record Batch**: A collection of N-Dimensional Arrow Arrays.
-  - **Metadata**: Encoding defining that a record batch contains N-Dimensional Arrow Arrays.
-  - **Fields**:
-    - `schema`: The schema of the record batch.
-    - `arrays`: A list of N-Dimensional Arrow Arrays.
+## Rust API
 
-#### Broadcasting
+- `NdArrowArray`: one N-dimensional array (values, `Dimensions`, `Attributes`).
+- `NdArrayType`: the extension type. It implements `arrow_schema::extension::ExtensionType`.
+- `NdColumn` and `NdColumnBuilder`: an Arrow column of the extension type.
+- `NdRecordBatch`: nd arrays over one shared target grid. Each column can use a
+  subset of the target dimensions. One nd batch encodes to one row of a
+  `RecordBatch` of nd columns.
 
-- **Broadcasting**: Broadcasting is the process of expanding the dimensions of an array to match another array's dimensions.
-  - **Example**: If you have a 2D array and a 1D array, the 1D array can be broadcasted to match the dimensions of the 2D array.
-- **Broadcasting Rules**:
-  - The dimensions of the arrays must be compatible.
-  - If the dimensions are not compatible, an error will be raised.
-- **Example**: Broadcasting a 1D array of shape (3,) to a 2D array of shape (2, 3) will result in a new array of shape (2, 3).
+```rust
+use std::sync::Arc;
+use arrow::array::Float64Array;
+use nd_arrow_array::{Attributes, Dimensions, NdArrowArray, NdColumn};
 
-This will also apply work for record batches with N-Dimensional Arrow Arrays. The broadcasting rules will be the same as above.
+let sst = NdArrowArray::try_new(
+    Arc::new(Float64Array::from(vec![0.0, 0.1, 0.2, 1.0, 1.1, 1.2])),
+    Dimensions::try_new([("time", 2), ("lat", 3)])?,
+)?
+.with_attributes(Attributes::new().with("units", "K"));
+
+let column = NdColumn::try_from_arrays([&sst])?;
+let field = column.to_field("sst");
+assert_eq!(column.value(0), sst);
+```
+
+## Roadmap
+
+- Compute kernels (broadcast, slice, transpose, reductions), based on NumPy semantics.
