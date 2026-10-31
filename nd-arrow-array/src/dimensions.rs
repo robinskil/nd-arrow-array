@@ -129,6 +129,44 @@ impl Dimensions {
         self.position(name).is_some()
     }
 
+    /// The axis of `name`, or an error that names the dimensions.
+    pub fn axis(&self, name: &str) -> Result<usize> {
+        self.position(name)
+            .ok_or_else(|| nd_err!(InvalidArgument, "dimension '{name}' is not in {self}"))
+    }
+
+    /// The size of dimension `name`, if present.
+    pub fn size_of(&self, name: &str) -> Option<usize> {
+        self.position(name).map(|axis| self.dims[axis].size())
+    }
+
+    /// The broadcast result of several dimension sets, xarray style.
+    ///
+    /// Axes align by name. The order follows the first appearance of each name.
+    /// Sizes must be equal, or one of them must be 1.
+    pub fn broadcast(all: &[&Dimensions]) -> Result<Dimensions> {
+        let mut out: Vec<Dimension> = Vec::new();
+        for dims in all {
+            for dim in dims.iter() {
+                match out.iter_mut().find(|d| d.name() == dim.name()) {
+                    None => out.push(dim.clone()),
+                    Some(existing) if existing.size() == dim.size() || dim.size() == 1 => {}
+                    Some(existing) if existing.size() == 1 => *existing = dim.clone(),
+                    Some(existing) => {
+                        return Err(nd_err!(
+                            ShapeMismatch,
+                            "dimension '{}' has incompatible sizes {} and {}",
+                            dim.name(),
+                            existing.size(),
+                            dim.size()
+                        ));
+                    }
+                }
+            }
+        }
+        Dimensions::try_new(out)
+    }
+
     /// Fails when an array of these dimensions cannot broadcast onto `target`:
     /// each axis must be in `target`, with the same size or with size 1.
     pub fn check_broadcast_to(&self, target: &Dimensions) -> Result<()> {

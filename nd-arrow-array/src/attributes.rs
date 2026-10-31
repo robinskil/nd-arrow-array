@@ -65,8 +65,8 @@ impl Attributes {
     }
 
     /// Insert or replace an attribute.
-    pub fn insert(&mut self, name: impl Into<Arc<str>>, value: impl IntoAttributeValue) {
-        self.insert_unchecked(name.into(), value.into_attribute_value());
+    pub fn insert(&mut self, name: impl Into<Arc<str>>, value: impl IntoScalar) {
+        self.insert_unchecked(name.into(), value.into_scalar());
     }
 
     /// Insert or replace an attribute from an Arrow array of length 1.
@@ -84,7 +84,7 @@ impl Attributes {
     }
 
     /// Builder form of [`Self::insert`].
-    pub fn with(mut self, name: impl Into<Arc<str>>, value: impl IntoAttributeValue) -> Self {
+    pub fn with(mut self, name: impl Into<Arc<str>>, value: impl IntoScalar) -> Self {
         self.insert(name, value);
         self
     }
@@ -145,51 +145,51 @@ pub(crate) fn attribute_field(name: &str, data_type: &DataType) -> FieldRef {
     Arc::new(Field::new(name, data_type.clone(), true))
 }
 
-/// Conversion of a Rust value into a length-1 attribute array.
-pub trait IntoAttributeValue {
-    fn into_attribute_value(self) -> ArrayRef;
+/// Conversion of a Rust value into a length-1 Arrow array (a scalar).
+pub trait IntoScalar {
+    fn into_scalar(self) -> ArrayRef;
 }
 
-impl IntoAttributeValue for &str {
-    fn into_attribute_value(self) -> ArrayRef {
+impl IntoScalar for &str {
+    fn into_scalar(self) -> ArrayRef {
         Arc::new(StringArray::from(vec![self]))
     }
 }
 
-impl IntoAttributeValue for String {
-    fn into_attribute_value(self) -> ArrayRef {
-        self.as_str().into_attribute_value()
+impl IntoScalar for String {
+    fn into_scalar(self) -> ArrayRef {
+        self.as_str().into_scalar()
     }
 }
 
-impl IntoAttributeValue for bool {
-    fn into_attribute_value(self) -> ArrayRef {
+impl IntoScalar for bool {
+    fn into_scalar(self) -> ArrayRef {
         Arc::new(BooleanArray::from(vec![self]))
     }
 }
 
-impl IntoAttributeValue for Vec<&str> {
-    fn into_attribute_value(self) -> ArrayRef {
+impl IntoScalar for Vec<&str> {
+    fn into_scalar(self) -> ArrayRef {
         list_of(Arc::new(StringArray::from(self)))
     }
 }
 
-impl IntoAttributeValue for Vec<String> {
-    fn into_attribute_value(self) -> ArrayRef {
+impl IntoScalar for Vec<String> {
+    fn into_scalar(self) -> ArrayRef {
         list_of(Arc::new(StringArray::from(self)))
     }
 }
 
 macro_rules! primitive_attribute {
     ($($native:ty => $arrow:ty),* $(,)?) => {$(
-        impl IntoAttributeValue for $native {
-            fn into_attribute_value(self) -> ArrayRef {
+        impl IntoScalar for $native {
+            fn into_scalar(self) -> ArrayRef {
                 Arc::new(PrimitiveArray::<$arrow>::from(vec![self]))
             }
         }
 
-        impl IntoAttributeValue for Vec<$native> {
-            fn into_attribute_value(self) -> ArrayRef {
+        impl IntoScalar for Vec<$native> {
+            fn into_scalar(self) -> ArrayRef {
                 list_of(Arc::new(PrimitiveArray::<$arrow>::from(self)))
             }
         }

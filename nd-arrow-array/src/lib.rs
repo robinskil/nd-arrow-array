@@ -8,17 +8,20 @@
 //!   [`NdArrowArray`].
 //! - [`NdRecordBatch`]: nd arrays over a shared target grid, encoded as a
 //!   [`RecordBatch`](arrow::record_batch::RecordBatch) of nd columns.
+//! - [`compute`]: kernels with NumPy and xarray semantics (layout,
+//!   arithmetic, reductions, search, interpolation, CF decoding).
 
 pub mod array;
 pub mod attributes;
 pub mod batch;
 pub mod column;
+pub mod compute;
 pub mod dimensions;
 pub mod error;
 pub mod extension;
 
 pub use array::NdArrowArray;
-pub use attributes::{Attributes, IntoAttributeValue};
+pub use attributes::{Attributes, IntoScalar};
 pub use batch::{NdRecordBatch, encode_batches, infer_target};
 pub use column::{NdColumn, NdColumnBuilder};
 pub use dimensions::{Dimension, Dimensions};

@@ -17,6 +17,10 @@ pub enum NdError {
     InvalidEncoding(String),
     #[error("schema mismatch: {0}")]
     SchemaMismatch(String),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("not supported: {0}")]
+    NotSupported(String),
 }
 
 impl From<NdError> for ArrowError {

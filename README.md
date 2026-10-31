@@ -66,6 +66,50 @@ let field = column.to_field("sst");
 assert_eq!(column.value(0), sst);
 ```
 
-## Roadmap
+## Kernels (`nd_arrow_array::compute`)
 
-- Compute kernels (broadcast, slice, transpose, reductions), based on NumPy semantics.
+The kernels follow NumPy and xarray semantics. Axes are addressed by
+dimension name, and broadcasting aligns axes by name. Nulls are missing values:
+reductions skip them, like the NumPy `nan*` functions.
+
+| Group | Kernels |
+|---|---|
+| Layout | `broadcast_to`, `broadcast_arrays`, `transpose`, `transpose_reversed`, `move_dim`, `squeeze`, `expand_dims`, `rename_dims`, `isel`, `take`, `flip`, `roll`, `concat`, `stack` |
+| Arithmetic | `add`, `sub`, `mul`, `div` (true division), `rem`, `pow`, `neg`, `abs`, operators `+ - * / % & \| ^ ! -` on `&NdArrowArray` |
+| Comparison and logic | `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `logical_and`, `logical_or`, `logical_xor`, `logical_not` |
+| Math | `sqrt`, `cbrt`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`, trigonometric and hyperbolic functions, `floor`, `ceil`, `trunc`, `round`, `deg2rad`, `rad2deg`, `isnan`, `isinf`, `isfinite` |
+| Missing values | `fill_null`, `where_`, `clip`, `nan_to_null`, `is_null_mask`, `is_not_null_mask`, `cast` |
+| CF conventions | `decode_cf` (mask `_FillValue`, `missing_value`, valid range; unpack `scale_factor` and `add_offset`), `encode_cf` |
+| Reductions | `sum`, `prod`, `mean`, `min`, `max`, `count`, `var`, `std`, `median`, `quantile`, `any`, `all`, `argmin`, `argmax`, `reduce` |
+| Scans | `cumsum`, `cumprod`, `diff` |
+| Search and sort | `searchsorted`, `sort`, `argsort`, `unique` |
+| Resampling | `interp` (linear), `rolling` (sum, mean, min, max, count), `groupby_reduce` |
+| Record batch | `materialize`, `isel`, `sel_range`, `sel_nearest`, `interp`, `coordinate` |
+
+Rules:
+
+- Type promotion follows `numpy.result_type`. Integer overflow wraps.
+- Sums and products of integers widen to `Int64` or `UInt64`.
+- Statistics (`mean`, `var`, `std`, `median`, `quantile`) compute in `Float64`.
+  The result is `Float32` for `Float32` input.
+- Floats order NaN above all numbers, like Arrow. Use `nan_to_null` to treat NaN
+  as missing.
+- Attributes follow xarray defaults. Layout kernels, `cast`, `where_`,
+  `fill_null` and `clip` keep them. Arithmetic, comparisons, math functions
+  and reductions drop them.
+
+```rust
+use nd_arrow_array::compute::{self, Selector, Slice};
+
+let anomaly = (&sst - &compute::mean(&sst, Some(&["time"]))?)?;
+let tropics = compute::isel(&anomaly, &[("lat", Selector::Slice(Slice::range(60, 120)))])?;
+let (decoded, encoding) = compute::decode_cf(&packed)?;
+```
+
+## Tests
+
+- Unit tests cover each kernel.
+- `tests/numpy.rs` compares the kernels with NumPy reference results in
+  `tests/fixtures/numpy.json`. Regenerate the file with
+  `python3 tests/fixtures/gen_numpy.py` (needs NumPy).
+- `cargo bench` runs the Criterion benchmarks in `benches/kernels.rs`.
