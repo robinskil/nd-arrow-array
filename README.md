@@ -44,6 +44,26 @@ dim_sizes: [2, 3]
 attrs:     { units: "K" }
 ```
 
+## Global attributes
+
+Attributes that describe a whole dataset (`title`, `institution`,
+`Conventions`) belong to the batch, not to one array. `NdRecordBatch` holds
+them, like xarray `Dataset.attrs`, and the batch kernels keep them.
+
+An encoded record batch stores them in one extra column:
+
+```text
+__global_attrs__: Struct { title: Utf8, institution: Utf8, ... }
+  ARROW:extension:name = nd_arrow.global_attributes
+```
+
+- One row per nd batch, so each row keeps its own global attributes when
+  encoded batches are concatenated.
+- The struct holds the union of keys. A null means that the row does not have
+  that key.
+- The column is left out when no batch has global attributes.
+- Decoders leave it out of the logical schema, and `materialize` does not output it.
+
 ## Rust API
 
 - `NdArrowArray`: one N-dimensional array (values, `Dimensions`, `Attributes`).

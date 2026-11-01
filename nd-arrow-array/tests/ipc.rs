@@ -5,7 +5,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
-use nd_arrow_array::extension::is_nd_field;
+use nd_arrow_array::extension::{is_global_attributes_field, is_nd_field};
 use nd_arrow_array::{
     Attributes, Dimensions, NdArrayType, NdArrowArray, NdColumn, NdRecordBatch, encode_batches,
 };
@@ -57,7 +57,13 @@ fn sample_batch() -> NdRecordBatch {
             .with("units", "degC")
             .with("valid_range", vec![-50.0f32, 60.0]),
     );
-    NdRecordBatch::try_new_inferred(schema, vec![time, station, temp]).unwrap()
+    NdRecordBatch::try_new_inferred(schema, vec![time, station, temp])
+        .unwrap()
+        .with_attributes(
+            Attributes::new()
+                .with("title", "Station temperatures")
+                .with("Conventions", "CF-1.8"),
+        )
 }
 
 #[test]
@@ -68,6 +74,9 @@ fn nd_batch_survives_ipc() {
 
     assert_eq!(read.schema(), encoded.schema());
     for field in read.schema().fields() {
+        if is_global_attributes_field(field) {
+            continue;
+        }
         assert!(
             is_nd_field(field),
             "{} lost the extension tag",
@@ -81,6 +90,7 @@ fn nd_batch_survives_ipc() {
     assert_eq!(decoded.len(), 2);
     for batch in decoded {
         assert_eq!(batch.target(), nd.target());
+        assert_eq!(batch.attributes(), nd.attributes());
         assert_eq!(batch.columns(), nd.columns());
     }
 }

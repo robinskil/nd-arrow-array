@@ -2,26 +2,32 @@
 
 use std::sync::Arc;
 
-use arrow::array::ArrayRef;
+use arrow::array::{ArrayRef, StructArray};
 use arrow::datatypes::{Field, Schema, SchemaRef};
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use crate::array::NdArrowArray;
+use crate::attributes::Attributes;
 use crate::column::NdColumn;
 use crate::dimensions::{Dimension, Dimensions};
 use crate::error::{Result, nd_err};
-use crate::extension::{is_nd_field, logical_schema, with_base_metadata};
+use crate::extension::{
+    GLOBAL_ATTRIBUTES_FIELD, global_attributes_field, is_global_attributes_field, is_nd_field,
+    logical_schema, with_base_metadata,
+};
 
 /// A record batch whose columns are [`NdArrowArray`]s over a shared target grid.
 ///
 /// Each column can use a subset of the target dimensions: a scalar attribute,
 /// a 1-D coordinate, a full-rank data variable. Columns stay un-broadcast.
 /// The schema is the logical schema: one field per column, typed by its values.
+/// Global attributes describe the whole batch, like xarray `Dataset.attrs`.
 #[derive(Debug, Clone)]
 pub struct NdRecordBatch {
     schema: SchemaRef,
     columns: Vec<NdArrowArray>,
     target: Dimensions,
+    attributes: Attributes,
 }
 
 impl NdRecordBatch {
@@ -54,7 +60,23 @@ impl NdRecordBatch {
             schema,
             columns,
             target,
+            attributes: Attributes::new(),
         })
+    }
+
+    /// Replace the global attributes.
+    pub fn with_attributes(mut self, attributes: Attributes) -> Self {
+        self.attributes = attributes;
+        self
+    }
+
+    /// The global attributes of the batch.
+    pub fn attributes(&self) -> &Attributes {
+        &self.attributes
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut Attributes {
+        &mut self.attributes
     }
 
     /// A batch with the target grid inferred by [`infer_target`].
@@ -120,6 +142,8 @@ impl NdRecordBatch {
 /// Encode several nd batches with one shared logical schema, one row each.
 ///
 /// The `attrs` struct of each column holds the union of the attribute keys of all batches.
+/// When a batch has global attributes, a last column [`GLOBAL_ATTRIBUTES_FIELD`]
+/// holds them, also as the union of keys.
 pub fn encode_batches(batches: &[NdRecordBatch]) -> Result<RecordBatch> {
     let Some(first) = batches.first() else {
         return Err(nd_err!(SchemaMismatch, "no nd batches to encode"));
@@ -148,6 +172,19 @@ pub fn encode_batches(batches: &[NdRecordBatch]) -> Result<RecordBatch> {
         columns.push(column.into_array_ref());
     }
 
+    if batches.iter().any(|b| !b.attributes().is_empty()) {
+        if schema.field_with_name(GLOBAL_ATTRIBUTES_FIELD).is_ok() {
+            return Err(nd_err!(
+                SchemaMismatch,
+                "column name '{GLOBAL_ATTRIBUTES_FIELD}' is reserved for global attributes"
+            ));
+        }
+        let global = Attributes::union_fields(batches.iter().map(NdRecordBatch::attributes))?;
+        let rows: Vec<Option<&Attributes>> = batches.iter().map(|b| Some(b.attributes())).collect();
+        columns.push(Arc::new(Attributes::encode_rows(&rows, &global)?));
+        fields.push(global_attributes_field(global));
+    }
+
     let schema = Schema::new_with_metadata(fields, schema.metadata().clone());
     let options = RecordBatchOptions::new().with_row_count(Some(batches.len()));
     Ok(RecordBatch::try_new_with_options(
@@ -160,29 +197,54 @@ pub fn encode_batches(batches: &[NdRecordBatch]) -> Result<RecordBatch> {
 struct Decoder {
     schema: SchemaRef,
     columns: Vec<NdColumn>,
+    global: Option<StructArray>,
 }
 
 impl Decoder {
     fn try_new(batch: &RecordBatch) -> Result<Self> {
-        if let Some(field) = batch.schema().fields().iter().find(|f| !is_nd_field(f)) {
-            return Err(nd_err!(
-                InvalidEncoding,
-                "column '{}' is not an nd column",
-                field.name()
-            ));
+        let mut nd_fields = Vec::new();
+        let mut columns = Vec::new();
+        let mut global = None;
+        for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+            if is_global_attributes_field(field) {
+                if global.is_some() {
+                    return Err(nd_err!(
+                        InvalidEncoding,
+                        "more than one global attributes column"
+                    ));
+                }
+                global = column.as_any().downcast_ref::<StructArray>().cloned();
+            } else if is_nd_field(field) {
+                nd_fields.push(field.clone());
+                columns.push(NdColumn::try_from_array(column.as_ref())?);
+            } else {
+                return Err(nd_err!(
+                    InvalidEncoding,
+                    "column '{}' is not an nd column",
+                    field.name()
+                ));
+            }
         }
-        let columns = batch
-            .columns()
-            .iter()
-            .map(|c| NdColumn::try_from_array(c.as_ref()))
-            .collect::<Result<Vec<_>>>()?;
-        let schema = Arc::new(logical_schema(batch.schema_ref())?);
-        Ok(Self { schema, columns })
+        let encoded = Schema::new_with_metadata(nd_fields, batch.schema().metadata().clone());
+        let schema = Arc::new(logical_schema(&encoded)?);
+        Ok(Self {
+            schema,
+            columns,
+            global,
+        })
     }
 
     fn row(&self, row: usize) -> Result<NdRecordBatch> {
         let columns: Vec<NdArrowArray> = self.columns.iter().map(|c| c.value(row)).collect();
-        NdRecordBatch::try_new_inferred(self.schema.clone(), columns)
+        let attributes = self
+            .global
+            .as_ref()
+            .map(|g| Attributes::from_struct_row(g, row))
+            .unwrap_or_default();
+        Ok(
+            NdRecordBatch::try_new_inferred(self.schema.clone(), columns)?
+                .with_attributes(attributes),
+        )
     }
 }
 
@@ -206,11 +268,11 @@ pub fn infer_target(columns: &[NdArrowArray]) -> Result<Dimensions> {
 
 #[cfg(test)]
 mod tests {
+    use crate::extension::is_global_attributes_field;
     use arrow::array::{Float64Array, Int32Array};
     use arrow::datatypes::DataType;
 
     use super::*;
-    use crate::attributes::Attributes;
 
     fn dims(spec: &[(&str, usize)]) -> Dimensions {
         Dimensions::try_new(spec.iter().copied()).unwrap()
@@ -285,6 +347,52 @@ mod tests {
         let rows: Vec<usize> = decoded.iter().map(NdRecordBatch::num_rows).collect();
         assert_eq!(rows, vec![6, 2]);
         assert_eq!(decoded[1].columns(), other.columns());
+    }
+
+    #[test]
+    fn global_attributes_round_trip_per_row() {
+        let a = grid_batch().with_attributes(
+            Attributes::new()
+                .with("title", "first")
+                .with("version", 2i32),
+        );
+        let b = grid_batch().with_attributes(Attributes::new().with("title", "second"));
+        let encoded = encode_batches(&[a.clone(), b.clone()]).unwrap();
+        let last = encoded.schema().fields().last().unwrap().clone();
+        assert_eq!(last.name(), GLOBAL_ATTRIBUTES_FIELD);
+        assert!(is_global_attributes_field(&last));
+
+        let decoded = NdRecordBatch::try_from_record_batch(&encoded).unwrap();
+        assert_eq!(decoded[0].attributes(), a.attributes());
+        assert_eq!(decoded[1].attributes(), b.attributes());
+        assert_eq!(decoded[0].schema().fields(), a.schema().fields());
+
+        // Concatenated encoded batches keep each row's own attributes.
+        let merged =
+            arrow::compute::concat_batches(&encoded.schema(), &[encoded.clone(), encoded]).unwrap();
+        let again = NdRecordBatch::try_from_record_batch(&merged).unwrap();
+        assert_eq!(again[3].attributes().get_str("title"), Some("second"));
+    }
+
+    #[test]
+    fn no_global_column_without_attributes() {
+        let encoded = grid_batch().to_record_batch().unwrap();
+        assert!(encoded.schema().fields().iter().all(|f| is_nd_field(f)));
+    }
+
+    #[test]
+    fn reserved_column_name_rejected() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            GLOBAL_ATTRIBUTES_FIELD,
+            DataType::Int32,
+            true,
+        )]));
+        let column =
+            NdArrowArray::try_new(Arc::new(Int32Array::from(vec![1])), dims(&[("x", 1)])).unwrap();
+        let b = NdRecordBatch::try_new_inferred(schema, vec![column])
+            .unwrap()
+            .with_attributes(Attributes::new().with("title", "x"));
+        assert!(b.to_record_batch().is_err());
     }
 
     #[test]

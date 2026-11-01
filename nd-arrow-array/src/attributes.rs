@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, StringArray, StructArray,
+    new_empty_array, new_null_array,
 };
 use arrow::buffer::OffsetBuffer;
+use arrow::compute::concat;
 use arrow::datatypes::{
     ArrowPrimitiveType, DataType, Field, FieldRef, Fields, Float32Type, Float64Type, Int8Type,
     Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
@@ -121,6 +123,56 @@ impl Attributes {
             .map(|(field, column)| (Arc::from(field.name().as_str()), column.slice(row, 1)))
             .collect();
         Self { entries }
+    }
+
+    /// The struct fields for the union of the keys in `all`. One key with two
+    /// types is an error.
+    pub fn union_fields<'a>(all: impl IntoIterator<Item = &'a Attributes>) -> Result<Fields> {
+        let mut fields: Vec<FieldRef> = Vec::new();
+        for attrs in all {
+            for (name, value) in attrs.iter() {
+                match fields.iter().find(|f| f.name() == name) {
+                    Some(existing) if existing.data_type() != value.data_type() => {
+                        return Err(nd_err!(
+                            InvalidAttribute,
+                            "attribute '{name}' has types {} and {}",
+                            existing.data_type(),
+                            value.data_type()
+                        ));
+                    }
+                    Some(_) => {}
+                    None => fields.push(attribute_field(name, value.data_type())),
+                }
+            }
+        }
+        Ok(fields.into())
+    }
+
+    /// Encode one struct row per entry of `rows`, with `fields` from
+    /// [`Self::union_fields`]. A missing key or a `None` row gives nulls.
+    pub fn encode_rows(rows: &[Option<&Attributes>], fields: &Fields) -> Result<StructArray> {
+        let columns = fields
+            .iter()
+            .map(|field| {
+                let null = new_null_array(field.data_type(), 1);
+                let parts: Vec<&dyn Array> = rows
+                    .iter()
+                    .map(|row| {
+                        row.and_then(|a| a.get(field.name()))
+                            .map_or(null.as_ref(), |v| v.as_ref())
+                    })
+                    .collect();
+                Ok(if parts.is_empty() {
+                    new_empty_array(field.data_type())
+                } else {
+                    concat(&parts)?
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if fields.is_empty() {
+            return Ok(StructArray::new_empty_fields(rows.len(), None));
+        }
+        Ok(StructArray::try_new(fields.clone(), columns, None)?)
     }
 
     fn insert_unchecked(&mut self, name: Arc<str>, value: ArrayRef) {

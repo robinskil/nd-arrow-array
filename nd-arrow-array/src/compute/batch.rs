@@ -42,6 +42,7 @@ impl NdRecordBatch {
     }
 
     /// Select by position on target dimensions, like xarray `Dataset.isel`.
+    /// The batch kernels keep the global attributes.
     ///
     /// Each column gets the selections of its own dimensions. A column with
     /// size 1 on a selected dimension keeps broadcasting, and an index
@@ -95,6 +96,7 @@ impl NdRecordBatch {
             })
             .collect::<Result<Vec<_>>>()?;
         NdRecordBatch::try_new(self.schema().clone(), columns, Dimensions::try_new(target)?)
+            .map(|b| b.with_attributes(self.attributes().clone()))
     }
 
     /// Select the positions whose coordinate lies in `[start, end]`, like
@@ -217,6 +219,7 @@ impl NdRecordBatch {
         });
         let schema = Schema::new_with_metadata(fields, self.schema().metadata().clone());
         NdRecordBatch::try_new(Arc::new(schema), columns, Dimensions::try_new(target)?)
+            .map(|b| b.with_attributes(self.attributes().clone()))
     }
 
     fn require_coordinate(&self, dim: &str) -> Result<&NdArrowArray> {
@@ -332,6 +335,20 @@ mod tests {
             .values()
             .to_vec();
         assert_eq!(sst, vec![1.0, 4.0]);
+    }
+
+    #[test]
+    fn kernels_keep_global_attributes() {
+        let b = batch().with_attributes(crate::Attributes::new().with("title", "test"));
+        let kept = [
+            b.isel(&[("lat", Selector::Index(0))]).unwrap(),
+            b.sel_nearest("lat", &22.0f64.into_scalar()).unwrap(),
+            b.sel_range("time", None, Some(&10i32.into_scalar()))
+                .unwrap(),
+        ];
+        for k in kept {
+            assert_eq!(k.attributes().get_str("title"), Some("test"));
+        }
     }
 
     #[test]

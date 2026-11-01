@@ -8,10 +8,10 @@ use arrow::array::{
 };
 use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::compute::concat;
-use arrow::datatypes::{DataType, Field, FieldRef, Fields};
+use arrow::datatypes::{DataType, Field, FieldRef};
 
 use crate::array::NdArrowArray;
-use crate::attributes::{Attributes, attribute_field};
+use crate::attributes::Attributes;
 use crate::dimensions::{Dimension, Dimensions};
 use crate::error::{NdError, Result, nd_err};
 use crate::extension::NdArrayType;
@@ -380,7 +380,7 @@ impl NdColumnBuilder {
         let rows = self.rows;
         let present: Vec<&NdArrowArray> = rows.iter().flatten().collect();
 
-        let attr_fields = union_attribute_fields(&present)?;
+        let attr_fields = Attributes::union_fields(present.iter().map(|a| a.attributes()))?;
         let extension = NdArrayType::with_value_field(value_field.clone(), attr_fields.clone());
 
         let values = concat_or_empty(
@@ -436,7 +436,11 @@ impl NdColumnBuilder {
             Arc::new(sizes_list),
         ];
         if extension.has_attributes() {
-            children.push(Arc::new(encode_attributes(&rows, &attr_fields)?));
+            let attrs: Vec<Option<&Attributes>> = rows
+                .iter()
+                .map(|r| r.as_ref().map(NdArrowArray::attributes))
+                .collect();
+            children.push(Arc::new(Attributes::encode_rows(&attrs, &attr_fields)?));
         }
 
         let nulls = rows
@@ -469,47 +473,10 @@ fn concat_or_empty(arrays: &[&dyn Array], data_type: &DataType) -> Result<ArrayR
     })
 }
 
-fn union_attribute_fields(arrays: &[&NdArrowArray]) -> Result<Fields> {
-    let mut fields: Vec<FieldRef> = Vec::new();
-    for (name, value) in arrays.iter().flat_map(|a| a.attributes().iter()) {
-        match fields.iter().find(|f| f.name() == name) {
-            Some(existing) if existing.data_type() != value.data_type() => {
-                return Err(nd_err!(
-                    InvalidAttribute,
-                    "attribute '{name}' has types {} and {}",
-                    existing.data_type(),
-                    value.data_type()
-                ));
-            }
-            Some(_) => {}
-            None => fields.push(attribute_field(name, value.data_type())),
-        }
-    }
-    Ok(fields.into())
-}
-
-fn encode_attributes(rows: &[Option<NdArrowArray>], fields: &Fields) -> Result<StructArray> {
-    let columns = fields
-        .iter()
-        .map(|field| {
-            let null = new_null_array(field.data_type(), 1);
-            let parts: Vec<&dyn Array> = rows
-                .iter()
-                .map(|row| {
-                    row.as_ref()
-                        .and_then(|a| a.attributes().get(field.name()))
-                        .map_or(null.as_ref(), |v| v.as_ref())
-                })
-                .collect();
-            concat_or_empty(&parts, field.data_type())
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(StructArray::try_new(fields.clone(), columns, None)?)
-}
-
 #[cfg(test)]
 mod tests {
     use arrow::array::{AsArray, Float64Array, Int32Array};
+    use arrow::datatypes::Fields;
     use arrow::datatypes::{Float64Type, Int32Type};
 
     use super::*;

@@ -243,6 +243,35 @@ impl ExtensionType for NdArrayType {
     }
 }
 
+/// Extension name of the column that holds the global attributes of each nd batch.
+pub const GLOBAL_ATTRIBUTES_EXTENSION: &str = "nd_arrow.global_attributes";
+
+/// Name of the global attributes column in an encoded record batch.
+pub const GLOBAL_ATTRIBUTES_FIELD: &str = "__global_attrs__";
+
+/// The global attributes column: a `Struct` with one nullable child per key,
+/// tagged with [`GLOBAL_ATTRIBUTES_EXTENSION`].
+pub fn global_attributes_field(fields: Fields) -> Field {
+    Field::new(GLOBAL_ATTRIBUTES_FIELD, DataType::Struct(fields), false).with_metadata(
+        HashMap::from([
+            (
+                EXTENSION_TYPE_NAME_KEY.to_string(),
+                GLOBAL_ATTRIBUTES_EXTENSION.to_string(),
+            ),
+            (
+                EXTENSION_TYPE_METADATA_KEY.to_string(),
+                serde_json::to_string(&NdArrayMetadata::default()).expect("metadata serializes"),
+            ),
+        ]),
+    )
+}
+
+/// True when `field` is a global attributes column.
+pub fn is_global_attributes_field(field: &Field) -> bool {
+    field.extension_type_name() == Some(GLOBAL_ATTRIBUTES_EXTENSION)
+        && matches!(field.data_type(), DataType::Struct(_))
+}
+
 /// True when `field` carries the nd extension tag.
 pub fn is_nd_field(field: &Field) -> bool {
     field.extension_type_name() == Some(NdArrayType::NAME)
