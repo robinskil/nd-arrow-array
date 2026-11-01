@@ -82,6 +82,17 @@ impl NdArrowArray {
     pub fn median(&self, axes: Option<&[&str]>) -> Result<Self> {
         compute::median(self, axes)
     }
+
+    /// See [`compute::resample()`].
+    pub fn resample(
+        &self,
+        dim: &str,
+        times: &NdArrowArray,
+        freq: compute::Frequency,
+        op: compute::Reduction,
+    ) -> Result<(Self, Self)> {
+        compute::resample(self, dim, times, freq, op)
+    }
 }
 
 #[cfg(test)]

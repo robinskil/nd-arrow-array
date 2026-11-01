@@ -22,8 +22,8 @@ pub const UNITS: &str = "units";
 /// CF attribute: the calendar of the time values.
 pub const CALENDAR: &str = "calendar";
 
-const MICROS_PER_SECOND: i64 = 1_000_000;
-const MICROS_PER_DAY: i64 = 86_400 * MICROS_PER_SECOND;
+pub(crate) const MICROS_PER_SECOND: i64 = 1_000_000;
+pub(crate) const MICROS_PER_DAY: i64 = 86_400 * MICROS_PER_SECOND;
 
 /// The decoded `Timestamp` type.
 pub fn timestamp_type() -> DataType {
@@ -202,7 +202,7 @@ pub fn encode_cf_time(a: &NdArrowArray, units: &str) -> Result<NdArrowArray> {
     Ok(NdArrowArray::try_new(Arc::new(numbers), a.dims().clone())?.with_attributes(attrs))
 }
 
-fn to_micros(a: &NdArrowArray) -> Result<TimestampMicrosecondArray> {
+pub(crate) fn to_micros(a: &NdArrowArray) -> Result<TimestampMicrosecondArray> {
     if !matches!(
         a.data_type(),
         DataType::Timestamp(_, _) | DataType::Date32 | DataType::Date64
@@ -217,7 +217,7 @@ fn to_micros(a: &NdArrowArray) -> Result<TimestampMicrosecondArray> {
     Ok(cast.as_primitive::<TimestampMicrosecondType>().clone())
 }
 
-/// Calendar periods for [`floor_time`].
+/// Calendar periods for [`floor_time`] and [`Frequency`](crate::compute::Frequency).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimePeriod {
     /// The start of the year.
@@ -234,9 +234,8 @@ pub enum TimePeriod {
     Second,
 }
 
-/// Round timestamps down to the start of their `period`, like pandas `floor` or
-/// `resample` labels. Pass the result as labels to
-/// [`groupby_reduce`](crate::compute::groupby_reduce) to resample.
+/// Round timestamps down to the start of their `period`, like pandas `floor`.
+/// For regular bins with a reduction, see [`resample`](fn@crate::compute::resample).
 pub fn floor_time(a: &NdArrowArray, period: TimePeriod) -> Result<NdArrowArray> {
     let stamps = to_micros(a)?;
     let fixed = |step: i64| move |v: i64| v.div_euclid(step) * step;

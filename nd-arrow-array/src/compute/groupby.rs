@@ -1,7 +1,6 @@
 //! Group-by reductions along one dimension, like `xarray.DataArray.groupby`.
 //!
-//! Resampling is a group-by on derived labels: compute a label per position
-//! (for example the day of each timestamp) and pass it as `labels`.
+//! For regular time bins, see [`resample`](fn@crate::compute::resample).
 
 use std::cmp::Ordering;
 

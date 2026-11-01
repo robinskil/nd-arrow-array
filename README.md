@@ -34,16 +34,41 @@ nulls, like the NumPy `nan*` functions. The kernels cover:
 - layout (broadcast, transpose, select, concat, pad);
 - arithmetic, math and comparisons;
 - reductions, scans, sort and search;
-- interpolation, rolling windows and group-by;
+- interpolation, rolling windows, group-by and time resampling;
 - CF decoding of fill values, packing and time.
 
+Kernels are tested against NumPy reference results.
+
+## Example
+
+Create a `(time=2, lat=3)` array, subtract the mean over time, and keep the
+first two latitudes:
+
 ```rust
+use std::sync::Arc;
+
+use arrow::array::Float64Array;
+use nd_arrow_array::compute::{Selector, Slice};
+use nd_arrow_array::{Attributes, Dimensions, NdArrowArray};
+
+let sst = NdArrowArray::try_new(
+    Arc::new(Float64Array::from(vec![10.0, 12.0, 14.0, 11.0, 13.0, 15.0])),
+    Dimensions::try_new([("time", 2), ("lat", 3)])?,
+)?
+.with_attributes(Attributes::new().with("units", "degC"));
+
 let anomaly = (&sst - &sst.mean(Some(&["time"]))?)?;
-let north = anomaly.isel(&[("lat", Selector::Slice(Slice::range(60, 120)))])?;
-let (decoded, _) = compute::decode_cf(&packed)?;
+let north = anomaly.isel(&[("lat", Selector::Slice(Slice::range(0, 2)))])?;
+println!("{north}");
 ```
 
-Kernels are tested against NumPy reference results.
+```text
+<NdArrowArray Float64 (time: 2, lat: 2)>
+[[-0.5, -0.5],
+ [0.5, 0.5]]
+```
+
+Run it with `cargo run --example basic`.
 
 ## Interoperability
 

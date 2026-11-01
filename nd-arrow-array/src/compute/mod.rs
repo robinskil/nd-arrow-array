@@ -28,6 +28,7 @@ pub mod histogram;
 pub mod interp;
 pub mod partial;
 pub mod reduce;
+pub mod resample;
 pub mod search;
 pub mod shape;
 pub mod time;
@@ -44,6 +45,7 @@ pub use histogram::{bincount, histogram};
 pub use interp::{InterpMethod, interp, interp_with};
 pub use partial::{PartialReduction, merge_all};
 pub use reduce::*;
+pub use resample::{Frequency, resample};
 pub use search::{SearchSide, argsort, argwhere, digitize, isin, searchsorted, sort, unique};
 pub use shape::*;
 pub use time::{

@@ -1,5 +1,5 @@
 //! Kernels on [`NdRecordBatch`]: materialize, select by position or by
-//! coordinate value, and interpolate.
+//! coordinate value, interpolate and resample.
 //!
 //! A coordinate is a 1-D column with the same name as its dimension, like xarray.
 
@@ -12,6 +12,8 @@ use arrow::datatypes::{DataType, Field, Float64Type, Schema};
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use crate::compute::interp::interp;
+use crate::compute::reduce::Reduction;
+use crate::compute::resample::{Frequency, resample};
 use crate::compute::search::partition_point;
 use crate::compute::shape::{Selector, Slice, broadcast_to, isel, squeeze};
 use crate::dimensions::{Dimension, Dimensions};
@@ -222,6 +224,45 @@ impl NdRecordBatch {
             .map(|b| b.with_attributes(self.attributes().clone()))
     }
 
+    /// Resample every column along `dim` with the time coordinate of `dim`,
+    /// see [`resample`].
+    ///
+    /// Columns that span `dim` are reduced with `op`. The coordinate becomes
+    /// the bin starts. Other columns stay unchanged.
+    pub fn resample(&self, dim: &str, freq: Frequency, op: Reduction) -> Result<Self> {
+        let coordinate = self.require_coordinate(dim)?.clone();
+        let size = self.target().size_of(dim).unwrap_or(0);
+        let (_, labels) = resample(&coordinate, dim, &coordinate, freq, Reduction::Count)?;
+        let mut fields: Vec<Field> = Vec::with_capacity(self.num_columns());
+        let mut columns = Vec::with_capacity(self.num_columns());
+        for (field, column) in self.schema().fields().iter().zip(self.columns()) {
+            let new_column = if field.name() == dim {
+                labels.clone()
+            } else if column.dims().size_of(dim) == Some(size) {
+                resample(column, dim, &coordinate, freq, op)?.0
+            } else {
+                column.clone()
+            };
+            fields.push(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(new_column.data_type().clone()),
+            );
+            columns.push(new_column);
+        }
+        let target = self.target().iter().map(|d| {
+            if d.name() == dim {
+                Dimension::new(dim, labels.len())
+            } else {
+                d.clone()
+            }
+        });
+        let schema = Schema::new_with_metadata(fields, self.schema().metadata().clone());
+        NdRecordBatch::try_new(Arc::new(schema), columns, Dimensions::try_new(target)?)
+            .map(|b| b.with_attributes(self.attributes().clone()))
+    }
+
     fn require_coordinate(&self, dim: &str) -> Result<&NdArrowArray> {
         self.target().axis(dim)?;
         self.coordinate(dim).ok_or_else(|| {
@@ -235,11 +276,11 @@ impl NdRecordBatch {
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{Float64Array, Int32Array};
-    use arrow::datatypes::{Float64Type, Int32Type};
+    use arrow::array::{Float64Array, Int32Array, TimestampMicrosecondArray};
+    use arrow::datatypes::{Float64Type, Int32Type, TimeUnit, TimestampMicrosecondType};
 
     use super::*;
-    use crate::IntoScalar;
+    use crate::{Attributes, IntoScalar};
 
     fn batch() -> NdRecordBatch {
         let schema = Arc::new(Schema::new(vec![
@@ -265,6 +306,58 @@ mod tests {
         let flag =
             NdArrowArray::try_new(Arc::new(Int32Array::from(vec![7])), d(&[("time", 1)])).unwrap();
         NdRecordBatch::try_new_inferred(schema, vec![time, lat, sst, flag]).unwrap()
+    }
+
+    #[test]
+    fn resample_reduces_columns_on_the_time_axis() {
+        let day = 86_400_000_000i64;
+        let d = |spec: &[(&str, usize)]| Dimensions::try_new(spec.iter().copied()).unwrap();
+        let schema = Arc::new(Schema::new(vec![
+            Field::new(
+                "time",
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                true,
+            ),
+            Field::new("lat", DataType::Float64, true),
+            Field::new("sst", DataType::Float64, true),
+        ]));
+        let time = NdArrowArray::try_new(
+            Arc::new(TimestampMicrosecondArray::from(vec![0, day / 2, 3 * day])),
+            d(&[("time", 3)]),
+        )
+        .unwrap();
+        let lat = NdArrowArray::try_new(
+            Arc::new(Float64Array::from(vec![10.0, 20.0])),
+            d(&[("lat", 2)]),
+        )
+        .unwrap();
+        let sst = NdArrowArray::try_new(
+            Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])),
+            d(&[("time", 3), ("lat", 2)]),
+        )
+        .unwrap();
+        let b = NdRecordBatch::try_new_inferred(schema, vec![time, lat, sst])
+            .unwrap()
+            .with_attributes(Attributes::new().with("title", "test"));
+        let freq = Frequency::parse("2D").unwrap();
+        let r = b.resample("time", freq, Reduction::Mean).unwrap();
+        assert_eq!(r.target(), &d(&[("time", 2), ("lat", 2)]));
+        let time: Vec<i64> = r
+            .column(0)
+            .values()
+            .as_primitive::<TimestampMicrosecondType>()
+            .values()
+            .to_vec();
+        assert_eq!(time, vec![0, 2 * day]);
+        assert_eq!(r.column(1), b.column(1));
+        let sst: Vec<f64> = r
+            .column(2)
+            .values()
+            .as_primitive::<Float64Type>()
+            .values()
+            .to_vec();
+        assert_eq!(sst, vec![2.0, 3.0, 5.0, 6.0]);
+        assert_eq!(r.attributes().get_str("title"), Some("test"));
     }
 
     #[test]
