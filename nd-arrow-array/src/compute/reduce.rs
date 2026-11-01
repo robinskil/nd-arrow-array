@@ -280,13 +280,60 @@ fn fold_sum_prod<T: ArrowPrimitiveType>(
             a.add_wrapping(b)
         }
     };
-    if let Some(groups) = blocks.contiguous_groups(raw, array.null_count()) {
-        let accs = groups.map(|chunk| lane_fold(chunk, init, op));
+    if blocks.contiguous_groups(raw, array.null_count()).is_some() {
+        let float_sum = !product && matches!(T::DATA_TYPE, DataType::Float32 | DataType::Float64);
+        let fold = |chunk: &[T::Native]| {
+            if float_sum {
+                pairwise_sum(chunk, init, &op)
+            } else {
+                lane_fold(chunk, init, op)
+            }
+        };
+        #[cfg(feature = "parallel")]
+        if raw.len() >= crate::compute::PARALLEL_MIN_LEN {
+            use rayon::prelude::*;
+            let accs: Vec<T::Native> = raw.par_chunks(blocks.reduced).map(fold).collect();
+            return Arc::new(PrimitiveArray::<T>::from_iter_values(accs));
+        }
+        let accs = raw.chunks(blocks.reduced).map(fold);
         return Arc::new(PrimitiveArray::<T>::from_iter_values(accs));
     }
     let mut accs = vec![init; blocks.groups()];
     blocks.for_each(array.nulls(), |g, _, p| accs[g] = op(accs[g], raw[p]));
     Arc::new(PrimitiveArray::<T>::from_iter_values(accs))
+}
+
+/// NumPy's pairwise summation (`pairwise_sum` in `loops_utils.h`), so float
+/// sums over a contiguous axis round exactly like NumPy.
+fn pairwise_sum<N: Copy>(a: &[N], zero: N, add: &impl Fn(N, N) -> N) -> N {
+    const BLOCK: usize = 128;
+    let n = a.len();
+    if n < 8 {
+        a.iter().fold(zero, |acc, &v| add(acc, v))
+    } else if n <= BLOCK {
+        let mut r = [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]];
+        let full = n - n % 8;
+        for block in a[8..full].chunks_exact(8) {
+            for k in 0..8 {
+                r[k] = add(r[k], block[k]);
+            }
+        }
+        let mut res = add(
+            add(add(r[0], r[1]), add(r[2], r[3])),
+            add(add(r[4], r[5]), add(r[6], r[7])),
+        );
+        for &v in &a[full..] {
+            res = add(res, v);
+        }
+        res
+    } else {
+        let mut half = n / 2;
+        half -= half % 8;
+        add(
+            pairwise_sum(&a[..half], zero, add),
+            pairwise_sum(&a[half..], zero, add),
+        )
+    }
 }
 
 /// Fold with eight independent lanes, so that the compiler can vectorize.
@@ -396,7 +443,7 @@ fn float_stat(blocks: &Blocks, input: &DataType, stat: Stat) -> Result<ArrayRef>
             .unwrap()
             .map(|chunk| {
                 (!chunk.is_empty())
-                    .then(|| lane_fold(chunk, 0.0, |a, b| a + b) / chunk.len() as f64)
+                    .then(|| pairwise_sum(chunk, 0.0, &|a, b| a + b) / chunk.len() as f64)
             })
             .collect(),
         Stat::Mean => {
@@ -522,6 +569,54 @@ fn scan<T: ArrowPrimitiveType>(blocks: &Blocks, values: &ArrayRef, product: bool
         out[p] = accs[g];
     });
     Arc::new(PrimitiveArray::<T>::new(out.into(), array.nulls().cloned()))
+}
+
+/// Running minimum along `dim`, like `numpy.minimum.accumulate`. Null positions stay null.
+pub fn cummin(a: &NdArrowArray, dim: &str) -> Result<NdArrowArray> {
+    cumulative_extreme(a, dim, false)
+}
+
+/// Running maximum along `dim`, like `numpy.maximum.accumulate`. Null positions stay null.
+pub fn cummax(a: &NdArrowArray, dim: &str) -> Result<NdArrowArray> {
+    cumulative_extreme(a, dim, true)
+}
+
+fn cumulative_extreme(a: &NdArrowArray, dim: &str, is_max: bool) -> Result<NdArrowArray> {
+    let blocks = Blocks::new(a, Some(&[dim]))?;
+    let values = a.values();
+    let out = downcast_primitive_array!(
+        values => scan_extreme(&blocks, values, is_max),
+        other => return Err(nd_err!(NotSupported, "cummin or cummax of {other}"))
+    );
+    NdArrowArray::try_new(out, a.dims().clone())
+}
+
+fn scan_extreme<T: ArrowPrimitiveType>(
+    blocks: &Blocks,
+    array: &PrimitiveArray<T>,
+    is_max: bool,
+) -> ArrayRef {
+    let raw = array.values();
+    let mut best: Vec<Option<T::Native>> = vec![None; blocks.groups()];
+    let mut out = vec![T::Native::default(); raw.len()];
+    blocks.for_each(array.nulls(), |g, _, p| {
+        let v = raw[p];
+        let next = match best[g] {
+            Some(b) if (is_max && !v.is_gt(b)) || (!is_max && !v.is_lt(b)) => b,
+            _ => v,
+        };
+        best[g] = Some(next);
+        out[p] = next;
+    });
+    Arc::new(
+        PrimitiveArray::<T>::new(out.into(), array.nulls().cloned())
+            .with_data_type(array.data_type().clone()),
+    )
+}
+
+/// Range of values (`max - min`), like `numpy.ptp`.
+pub fn ptp(a: &NdArrowArray, axes: Option<&[&str]>) -> Result<NdArrowArray> {
+    sub(&max(a, axes)?, &min(a, axes)?)
 }
 
 /// The `n`-th discrete difference along `dim`, like `numpy.diff`.

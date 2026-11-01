@@ -5,7 +5,12 @@
 //! the source values. Every layout operation (slice, step, broadcast,
 //! transpose, take) only builds a plan, and [`Gather::apply`] copies once.
 
-use arrow::array::{Array, ArrayRef, MutableArrayData, UInt32Array, UInt64Array, make_array};
+use std::sync::Arc;
+
+use arrow::array::{
+    Array, ArrayRef, ArrowPrimitiveType, MutableArrayData, PrimitiveArray, UInt32Array,
+    UInt64Array, downcast_primitive_array, make_array,
+};
 use arrow::compute::take;
 
 use crate::NdArrowArray;
@@ -71,17 +76,23 @@ impl Gather {
         if let Some(start) = self.contiguous_start() {
             return Ok(values.slice(start, len));
         }
+        if values.null_count() == 0 {
+            downcast_primitive_array!(
+                values => return Ok(Arc::new(self.gather_primitive(values))),
+                _ => {}
+            )
+        }
         let run = self.axes.last().map_or(0, |a| a.offsets.len());
         if run >= MIN_RUN && is_consecutive(&self.axes.last().unwrap().offsets) {
             return Ok(self.copy_runs(values, run));
         }
         let positions = self.positions();
         let indices: ArrayRef = if values.len() <= u32::MAX as usize {
-            std::sync::Arc::new(UInt32Array::from_iter_values(
+            Arc::new(UInt32Array::from_iter_values(
                 positions.into_iter().map(|p| p as u32),
             ))
         } else {
-            std::sync::Arc::new(UInt64Array::from_iter_values(
+            Arc::new(UInt64Array::from_iter_values(
                 positions.into_iter().map(|p| p as u64),
             ))
         };
@@ -102,6 +113,52 @@ impl Gather {
             block *= offsets.len();
         }
         Some(self.base + self.axes.iter().map(|a| a.offsets[0]).sum::<usize>())
+    }
+
+    /// Start position of each output row (one per index combination of all
+    /// axes except the last), in C order.
+    fn row_starts(&self) -> Vec<usize> {
+        let outer = &self.axes[..self.axes.len() - 1];
+        let mut starts = Vec::with_capacity(outer.iter().map(|a| a.offsets.len()).product());
+        for_each_position(outer, |start| starts.push(start + self.base));
+        starts
+    }
+
+    /// Gather a primitive array without nulls in one pass, row by row.
+    fn gather_primitive<T: ArrowPrimitiveType>(
+        &self,
+        array: &PrimitiveArray<T>,
+    ) -> PrimitiveArray<T> {
+        let raw = array.values();
+        let offsets = &self.axes.last().expect("rank > 0").offsets;
+        let run = offsets.len();
+        let broadcast = offsets.iter().all(|&o| o == offsets[0]);
+        let consecutive = is_consecutive(offsets);
+        let fill = |(row, &start): (&mut [T::Native], &usize)| {
+            let first = start + offsets[0];
+            if broadcast {
+                row.fill(raw[first]);
+            } else if consecutive {
+                row.copy_from_slice(&raw[first..first + run]);
+            } else {
+                for (out, &offset) in row.iter_mut().zip(offsets) {
+                    *out = raw[start + offset];
+                }
+            }
+        };
+        let starts = self.row_starts();
+        let mut out = vec![T::Native::default(); self.len()];
+        #[cfg(feature = "parallel")]
+        if out.len() >= crate::compute::PARALLEL_MIN_LEN {
+            use rayon::prelude::*;
+            out.par_chunks_mut(run)
+                .zip(starts.par_iter())
+                .for_each(fill);
+            return PrimitiveArray::<T>::new(out.into(), None)
+                .with_data_type(array.data_type().clone());
+        }
+        out.chunks_mut(run).zip(starts.iter()).for_each(fill);
+        PrimitiveArray::<T>::new(out.into(), None).with_data_type(array.data_type().clone())
     }
 
     fn copy_runs(&self, values: &ArrayRef, run: usize) -> ArrayRef {

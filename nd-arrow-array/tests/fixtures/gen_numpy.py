@@ -112,6 +112,11 @@ cases.append({
     "expected": encode(np.stack([np.interp(targets, xp, row) for row in fp]), ["y", "x"]),
 })
 
+# Pairwise summation: contiguous float sums must match NumPy bit for bit.
+long = rng.normal(size=(3, 1000))
+cases.append(case("exact_sum_long_axis", "sum", long, ["a", "b"], np.sum(long, axis=1), ["a"], axes=["b"]))
+cases.append(case("exact_mean_long_axis", "mean", long, ["a", "b"], np.mean(long, axis=1), ["a"], axes=["b"]))
+
 a = rng.normal(size=(3, 4)).round(3)
 b = rng.normal(size=(4,)).round(3)
 for op, fn in [("add", np.add), ("sub", np.subtract), ("mul", np.multiply), ("div", np.divide)]:
@@ -122,6 +127,45 @@ for op, fn in [("add", np.add), ("sub", np.subtract), ("mul", np.multiply), ("di
         "params": {"other": encode(b, ["y"])},
         "expected": encode(fn(a, b), ["x", "y"]),
     })
+
+# Functions added after the first kernel set.
+m = rng.integers(-9, 10, size=(3, 4)).astype(float)
+d = rng.choice([-4.0, -3.0, 2.0, 5.0], size=(4,))
+for op, fn in [("floor_divide", np.floor_divide), ("mod", np.mod)]:
+    cases.append({
+        "name": f"{op}_signs",
+        "op": op,
+        "input": encode(m, ["x", "y"]),
+        "params": {"other": encode(d, ["y"])},
+        "expected": encode(fn(m, d), ["x", "y"]),
+    })
+for axis in range(2):
+    dim = ["x", "y"][axis]
+    cases.append(case(f"cummax_{axis}", "cummax", m, ["x", "y"], np.maximum.accumulate(m, axis=axis), ["x", "y"], dim=dim))
+    cases.append(case(f"cummin_{axis}", "cummin", m, ["x", "y"], np.minimum.accumulate(m, axis=axis), ["x", "y"], dim=dim))
+    cases.append(case(f"ptp_{axis}", "ptp", m, ["x", "y"], np.ptp(m, axis=axis), [["y"], ["x"]][axis], axes=[dim]))
+    for mode in ("edge", "reflect", "symmetric", "wrap"):
+        width = [(0, 0), (0, 0)]
+        width[axis] = (2, 3)
+        cases.append(case(f"pad_{mode}_{axis}", "pad", m, ["x", "y"], np.pad(m, width, mode=mode), ["x", "y"],
+                          dim=dim, before=2, after=3, mode=mode))
+    cases.append(case(f"tile_{axis}", "tile", m, ["x", "y"], np.concatenate([m, m, m], axis=axis), ["x", "y"], dim=dim, reps=3))
+    cases.append(case(f"repeat_{axis}", "repeat", m, ["x", "y"], np.repeat(m, 2, axis=axis), ["x", "y"], dim=dim, repeats=2))
+
+grid = rng.normal(size=(6, 8))
+cases.append(case("coarsen_mean", "coarsen_mean", grid, ["y", "x"],
+                  grid.reshape(3, 2, 2, 4).mean(axis=(1, 3)), ["y", "x"], windows=[["y", 2], ["x", 4]]))
+
+samples = rng.normal(size=200)
+edges = np.array([-3.0, -1.0, -0.2, 0.0, 0.5, 2.0, 3.0])
+counts, _ = np.histogram(samples, bins=edges)
+cases.append({
+    "name": "histogram",
+    "op": "histogram",
+    "input": encode(samples, ["x"]),
+    "params": {"edges": encode(edges, ["e"])},
+    "expected": encode(counts, ["bin"]),
+})
 
 out = pathlib.Path(__file__).with_name("numpy.json")
 out.write_text(json.dumps({"numpy": np.__version__, "cases": cases}, indent=1))

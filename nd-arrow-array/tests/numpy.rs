@@ -72,6 +72,38 @@ fn run(case: &Value) -> NdArrowArray {
             compute::searchsorted(&input, &array(&params["values"]), side)
         }
         "interp" => compute::interp(&input, "x", &array(&params["x"]), &array(&params["new_x"])),
+        "floor_divide" => compute::floor_divide(&input, &array(&params["other"])),
+        "mod" => compute::mod_(&input, &array(&params["other"])),
+        "cummax" => compute::cummax(&input, dim()),
+        "cummin" => compute::cummin(&input, dim()),
+        "ptp" => compute::ptp(&input, axes),
+        "pad" => {
+            let mode = match params["mode"].as_str().unwrap() {
+                "edge" => compute::PadMode::Edge,
+                "reflect" => compute::PadMode::Reflect,
+                "symmetric" => compute::PadMode::Symmetric,
+                _ => compute::PadMode::Wrap,
+            };
+            let width = |key: &str| params[key].as_u64().unwrap() as usize;
+            compute::pad(&input, dim(), width("before"), width("after"), mode)
+        }
+        "tile" => compute::tile(&input, dim(), params["reps"].as_u64().unwrap() as usize),
+        "repeat" => compute::repeat(&input, dim(), params["repeats"].as_u64().unwrap() as usize),
+        "coarsen_mean" => {
+            let windows: Vec<(&str, usize)> = params["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|w| (w[0].as_str().unwrap(), w[1].as_u64().unwrap() as usize))
+                .collect();
+            compute::coarsen(
+                &input,
+                &windows,
+                compute::Reduction::Mean,
+                compute::CoarsenBoundary::Exact,
+            )
+        }
+        "histogram" => compute::histogram(&input, &array(&params["edges"]), "bin"),
         "add" => compute::add(&input, &array(&params["other"])),
         "sub" => compute::sub(&input, &array(&params["other"])),
         "mul" => compute::mul(&input, &array(&params["other"])),
@@ -81,9 +113,10 @@ fn run(case: &Value) -> NdArrowArray {
     .unwrap_or_else(|e| panic!("{}: {e}", case["name"]))
 }
 
-fn close(actual: Option<f64>, expected: Option<f64>) -> bool {
+fn close(actual: Option<f64>, expected: Option<f64>, exact: bool) -> bool {
     match (actual, expected) {
         (None, None) => true,
+        (Some(a), Some(e)) if exact => a.to_bits() == e.to_bits(),
         (Some(a), Some(e)) => (a - e).abs() <= 1e-9 * e.abs().max(1.0),
         _ => false,
     }
@@ -98,7 +131,7 @@ fn kernels_match_numpy() {
     let fixtures: Value = serde_json::from_str(&text).unwrap();
     let cases = fixtures["cases"].as_array().unwrap();
     assert!(
-        cases.len() >= 90,
+        cases.len() >= 110,
         "fixture file has only {} cases",
         cases.len()
     );
@@ -121,7 +154,7 @@ fn kernels_match_numpy() {
         for i in 0..values.len() {
             let a = values.is_valid(i).then(|| values.value(i));
             let e = wanted.is_valid(i).then(|| wanted.value(i));
-            if !close(a, e) {
+            if !close(a, e, name.starts_with("exact_")) {
                 failures.push(format!("{name}[{i}]: {a:?} != {e:?}"));
                 break;
             }

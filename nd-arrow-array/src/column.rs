@@ -31,6 +31,14 @@ impl NdColumn {
     pub fn try_new(storage: StructArray) -> Result<Self> {
         let extension = NdArrayType::try_from_storage_type(storage.data_type())?;
         validate_rows(&storage)?;
+        // An `attrs` struct without fields is the same as no `attrs` field.
+        let storage = if !extension.has_attributes() && storage.num_columns() == 4 {
+            let (fields, mut children, nulls) = storage.into_parts();
+            children.truncate(3);
+            StructArray::try_new(fields.iter().take(3).cloned().collect(), children, nulls)?
+        } else {
+            storage
+        };
         Ok(Self { storage, extension })
     }
 
@@ -65,6 +73,12 @@ impl NdColumn {
             .downcast_ref::<StructArray>()
             .expect("storage type is a struct")
             .clone();
+        Self { storage, extension }
+    }
+
+    /// Wrap storage that matches `extension` and holds valid rows.
+    pub(crate) fn from_parts_unchecked(storage: StructArray, extension: NdArrayType) -> Self {
+        debug_assert_eq!(storage.data_type(), &extension.storage_type());
         Self { storage, extension }
     }
 
@@ -104,7 +118,10 @@ impl NdColumn {
         }
         let values = self.values_list().value(row);
         let dims = self.dimensions_at(row);
-        let attrs = Attributes::from_struct_row(self.attrs_struct(), row);
+        let attrs = self
+            .attrs_struct()
+            .map(|attrs| Attributes::from_struct_row(attrs, row))
+            .unwrap_or_default();
         Some(NdArrowArray::new_unchecked(values, dims, attrs))
     }
 
@@ -145,12 +162,15 @@ impl NdColumn {
         list_column(&self.storage, 0)
     }
 
-    pub fn attrs_struct(&self) -> &StructArray {
-        self.storage
-            .column(3)
-            .as_any()
-            .downcast_ref()
-            .expect("validated")
+    /// The `attrs` struct, or `None` when the column has no attributes.
+    pub fn attrs_struct(&self) -> Option<&StructArray> {
+        self.extension.has_attributes().then(|| {
+            self.storage
+                .column(3)
+                .as_any()
+                .downcast_ref()
+                .expect("validated")
+        })
     }
 
     pub fn storage(&self) -> &StructArray {
@@ -410,23 +430,21 @@ impl NdColumnBuilder {
         let sizes_list =
             ListArray::try_new(item_field(2), rank_offsets, Arc::new(sizes.finish()), None)?;
 
-        let attrs = encode_attributes(&rows, &attr_fields)?;
+        let mut children: Vec<ArrayRef> = vec![
+            Arc::new(values_list),
+            Arc::new(names_list),
+            Arc::new(sizes_list),
+        ];
+        if extension.has_attributes() {
+            children.push(Arc::new(encode_attributes(&rows, &attr_fields)?));
+        }
 
         let nulls = rows
             .iter()
             .any(Option::is_none)
             .then(|| NullBuffer::from_iter(rows.iter().map(Option::is_some)));
 
-        let storage = StructArray::try_new(
-            storage_fields,
-            vec![
-                Arc::new(values_list),
-                Arc::new(names_list),
-                Arc::new(sizes_list),
-                Arc::new(attrs),
-            ],
-            nulls,
-        )?;
+        let storage = StructArray::try_new(storage_fields, children, nulls)?;
         Ok(NdColumn { storage, extension })
     }
 }
@@ -471,9 +489,6 @@ fn union_attribute_fields(arrays: &[&NdArrowArray]) -> Result<Fields> {
 }
 
 fn encode_attributes(rows: &[Option<NdArrowArray>], fields: &Fields) -> Result<StructArray> {
-    if fields.is_empty() {
-        return Ok(StructArray::new_empty_fields(rows.len(), None));
-    }
     let columns = fields
         .iter()
         .map(|field| {
@@ -579,6 +594,26 @@ mod tests {
         let a = nd(vec![1], &[]).with_attributes(Attributes::new().with("units", "K"));
         let b = nd(vec![1], &[]).with_attributes(Attributes::new().with("units", 1i32));
         assert!(NdColumn::try_from_arrays([&a, &b]).is_err());
+    }
+
+    #[test]
+    fn attrs_field_is_left_out_without_attributes() {
+        let column = NdColumn::try_from_arrays([&nd(vec![1, 2], &[("x", 2)])]).unwrap();
+        assert_eq!(column.storage().num_columns(), 3);
+        assert!(column.attrs_struct().is_none());
+
+        let (fields, mut children, nulls) = column.clone().into_storage().into_parts();
+        let mut fields: Vec<FieldRef> = fields.iter().cloned().collect();
+        fields.push(Arc::new(Field::new(
+            crate::extension::ATTRS_FIELD,
+            DataType::Struct(Fields::empty()),
+            false,
+        )));
+        children.push(Arc::new(StructArray::new_empty_fields(1, None)));
+        let with_empty = StructArray::new(fields.into(), children, nulls);
+        let normalized = NdColumn::try_new(with_empty).unwrap();
+        assert_eq!(normalized.storage().num_columns(), 3);
+        assert_eq!(normalized.value(0), column.value(0));
     }
 
     #[test]

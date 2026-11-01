@@ -339,6 +339,109 @@ pub fn roll(a: &NdArrowArray, dim: &str, shift: isize) -> Result<NdArrowArray> {
     take(a, dim, &indices)
 }
 
+/// How [`pad`] fills the new positions, like the `mode` of `numpy.pad`.
+#[derive(Debug, Clone)]
+pub enum PadMode {
+    /// A constant: a length-1 array, or `None` for null.
+    Constant(Option<arrow::array::ArrayRef>),
+    /// Repeat the edge value.
+    Edge,
+    /// Mirror without the edge value: `[3 2 | 1 2 3 | 2 1]`.
+    Reflect,
+    /// Mirror with the edge value: `[2 1 | 1 2 3 | 3 2]`.
+    Symmetric,
+    /// Wrap around: `[2 3 | 1 2 3 | 1 2]`.
+    Wrap,
+}
+
+fn dim_size(a: &NdArrowArray, dim: &str) -> Result<usize> {
+    a.dims()
+        .size_of(dim)
+        .ok_or_else(|| nd_err!(InvalidArgument, "dimension '{dim}' is not in {}", a.dims()))
+}
+
+/// Add `before` and `after` positions along `dim`, like `numpy.pad`.
+pub fn pad(
+    a: &NdArrowArray,
+    dim: &str,
+    before: usize,
+    after: usize,
+    mode: PadMode,
+) -> Result<NdArrowArray> {
+    let n = dim_size(a, dim)? as isize;
+    let index = |i: isize| -> Result<isize> {
+        if (0..n).contains(&i) {
+            return Ok(i);
+        }
+        if n == 0 {
+            return Err(nd_err!(
+                InvalidArgument,
+                "cannot pad an empty dimension '{dim}' with {mode:?}"
+            ));
+        }
+        Ok(match &mode {
+            PadMode::Edge => i.clamp(0, n - 1),
+            PadMode::Wrap => i.rem_euclid(n),
+            PadMode::Symmetric => {
+                let period = 2 * n;
+                let k = i.rem_euclid(period);
+                if k < n { k } else { period - 1 - k }
+            }
+            PadMode::Reflect => {
+                if n == 1 {
+                    0
+                } else {
+                    let period = 2 * (n - 1);
+                    let k = i.rem_euclid(period);
+                    if k < n { k } else { period - k }
+                }
+            }
+            PadMode::Constant(_) => unreachable!(),
+        })
+    };
+    let (before, after) = (before as isize, after as isize);
+    if let PadMode::Constant(value) = &mode {
+        let block = |size: usize| -> Result<NdArrowArray> {
+            let dims = a.dims().iter().map(|d| {
+                if d.name() == dim {
+                    Dimension::new(dim, size)
+                } else {
+                    d.clone()
+                }
+            });
+            let dims = Dimensions::try_new(dims)?;
+            let fill = match value {
+                None => arrow::array::new_null_array(a.data_type(), 1),
+                Some(v) => arrow::compute::cast(v.slice(0, 1).as_ref(), a.data_type())?,
+            };
+            broadcast_to(&NdArrowArray::try_new_scalar(fill)?, &dims)
+        };
+        let head = block(before as usize)?;
+        let tail = block(after as usize)?;
+        return concat(&[&head, a, &tail], dim);
+    }
+    let indices = (-before..n + after)
+        .map(index)
+        .collect::<Result<Vec<_>>>()?;
+    take(a, dim, &indices)
+}
+
+/// Repeat the whole array `reps` times along `dim`, like `numpy.tile`.
+pub fn tile(a: &NdArrowArray, dim: &str, reps: usize) -> Result<NdArrowArray> {
+    let n = dim_size(a, dim)? as isize;
+    let indices: Vec<isize> = (0..reps).flat_map(|_| 0..n).collect();
+    take(a, dim, &indices)
+}
+
+/// Repeat each element `repeats` times along `dim`, like `numpy.repeat`.
+pub fn repeat(a: &NdArrowArray, dim: &str, repeats: usize) -> Result<NdArrowArray> {
+    let n = dim_size(a, dim)? as isize;
+    let indices: Vec<isize> = (0..n)
+        .flat_map(|i| std::iter::repeat_n(i, repeats))
+        .collect();
+    take(a, dim, &indices)
+}
+
 /// Join arrays along an existing dimension, like `numpy.concatenate`.
 ///
 /// All arrays need the same dimensions, except for the size of `dim`. Arrays
@@ -539,6 +642,36 @@ mod tests {
         assert_eq!(values(&flip(&a, "x").unwrap()), vec![4, 3, 2, 1, 0]);
         assert_eq!(values(&roll(&a, "x", 2).unwrap()), vec![3, 4, 0, 1, 2]);
         assert_eq!(values(&roll(&a, "x", -1).unwrap()), vec![1, 2, 3, 4, 0]);
+    }
+
+    #[test]
+    fn pad_modes_match_numpy() {
+        let a = arange(&[("x", 3)]);
+        let padded = |mode| values(&pad(&a, "x", 2, 2, mode).unwrap());
+        assert_eq!(padded(PadMode::Edge), vec![0, 0, 0, 1, 2, 2, 2]);
+        assert_eq!(padded(PadMode::Reflect), vec![2, 1, 0, 1, 2, 1, 0]);
+        assert_eq!(padded(PadMode::Symmetric), vec![1, 0, 0, 1, 2, 2, 1]);
+        assert_eq!(padded(PadMode::Wrap), vec![1, 2, 0, 1, 2, 0, 1]);
+        let constant = pad(&a, "x", 1, 0, PadMode::Constant(None)).unwrap();
+        assert_eq!(constant.values().null_count(), 1);
+        assert_eq!(constant.shape(), vec![4]);
+    }
+
+    #[test]
+    fn tile_and_repeat() {
+        let a = arange(&[("x", 2), ("y", 2)]);
+        assert_eq!(
+            values(&tile(&a, "y", 2).unwrap()),
+            vec![0, 1, 0, 1, 2, 3, 2, 3]
+        );
+        assert_eq!(
+            values(&repeat(&a, "x", 2).unwrap()),
+            vec![0, 1, 0, 1, 2, 3, 2, 3]
+        );
+        assert_eq!(
+            values(&repeat(&a, "y", 2).unwrap()),
+            vec![0, 0, 1, 1, 2, 2, 3, 3]
+        );
     }
 
     #[test]

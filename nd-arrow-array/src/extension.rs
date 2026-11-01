@@ -8,9 +8,12 @@
 //!   values:    List<T>,        // flat C-order values
 //!   dim_names: List<Utf8>,     // one name per axis
 //!   dim_sizes: List<UInt32>,   // one size per axis
-//!   attrs:     Struct { .. },  // one nullable child per attribute key
+//!   attrs:     Struct { .. },  // optional: one nullable child per attribute key
 //! }
 //! ```
+//!
+//! A column without attributes leaves out the `attrs` field, so no storage
+//! format needs to support a struct with zero fields.
 //!
 //! The field carries `ARROW:extension:name = nd_arrow.array`, so the intent
 //! survives IPC, Parquet and any engine that keeps field metadata.
@@ -103,8 +106,13 @@ impl NdArrayType {
         DataType::Struct(self.storage_fields())
     }
 
+    /// True when the storage has an `attrs` field.
+    pub fn has_attributes(&self) -> bool {
+        !self.attrs.is_empty()
+    }
+
     pub(crate) fn storage_fields(&self) -> Fields {
-        Fields::from(vec![
+        let mut fields = vec![
             Field::new(
                 VALUES_FIELD,
                 DataType::List(self.value_field.clone()),
@@ -112,11 +120,19 @@ impl NdArrayType {
             ),
             Field::new(DIM_NAMES_FIELD, dim_names_type(), false),
             Field::new(DIM_SIZES_FIELD, dim_sizes_type(), false),
-            Field::new(ATTRS_FIELD, DataType::Struct(self.attrs.clone()), false),
-        ])
+        ];
+        if self.has_attributes() {
+            fields.push(Field::new(
+                ATTRS_FIELD,
+                DataType::Struct(self.attrs.clone()),
+                false,
+            ));
+        }
+        fields.into()
     }
 
     /// Parse the storage layout. This ignores field metadata.
+    /// An `attrs` struct with zero fields reads as no attributes.
     pub fn try_from_storage_type(data_type: &DataType) -> Result<Self> {
         let DataType::Struct(fields) = data_type else {
             return Err(nd_err!(
@@ -126,7 +142,7 @@ impl NdArrayType {
         };
         let names: Vec<&str> = fields.iter().map(|f| f.name().as_str()).collect();
         let expected = [VALUES_FIELD, DIM_NAMES_FIELD, DIM_SIZES_FIELD, ATTRS_FIELD];
-        if names != expected {
+        if !(names == expected[..3] || names == expected) {
             return Err(nd_err!(
                 InvalidEncoding,
                 "storage fields must be {expected:?}, got {names:?}"
@@ -142,15 +158,18 @@ impl NdArrayType {
         };
         expect_list_of(&fields[1], &DataType::Utf8)?;
         expect_list_of(&fields[2], &DataType::UInt32)?;
-        let DataType::Struct(attrs) = fields[3].data_type() else {
-            return Err(nd_err!(
-                InvalidEncoding,
-                "'{ATTRS_FIELD}' must be a Struct, got {}",
-                fields[3].data_type()
-            ));
+        let attrs = match fields.get(3).map(|f| f.data_type()) {
+            None => Fields::empty(),
+            Some(DataType::Struct(attrs)) => attrs.clone(),
+            Some(other) => {
+                return Err(nd_err!(
+                    InvalidEncoding,
+                    "'{ATTRS_FIELD}' must be a Struct, got {other}"
+                ));
+            }
         };
 
-        Ok(Self::with_value_field(value_field.clone(), attrs.clone()))
+        Ok(Self::with_value_field(value_field.clone(), attrs))
     }
 
     /// A field named `name` with this storage type and the extension tag.

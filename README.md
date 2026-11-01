@@ -13,13 +13,16 @@ Struct {
   values:    List<T>,        // flat values, C-order (row-major)
   dim_names: List<Utf8>,     // one name per axis
   dim_sizes: List<UInt32>,   // one size per axis
-  attrs:     Struct { .. },  // one nullable child per attribute key
+  attrs:     Struct { .. },  // optional: one nullable child per attribute key
 }
 ```
 
+A column without attributes leaves out the `attrs` field. Readers also accept
+an `attrs` struct with zero fields, and treat it as no attributes.
+
 ### Rules
 
-- The field order is fixed: `values`, `dim_names`, `dim_sizes`, `attrs`.
+- The field order is fixed: `values`, `dim_names`, `dim_sizes`, then `attrs` if present.
 - `dim_names` and `dim_sizes` have the same length. This length is the rank.
 - The length of `values` is the product of `dim_sizes`.
 - Rank 0 (empty dimension lists) is a scalar with one value.
@@ -74,17 +77,26 @@ reductions skip them, like the NumPy `nan*` functions.
 
 | Group | Kernels |
 |---|---|
-| Layout | `broadcast_to`, `broadcast_arrays`, `transpose`, `transpose_reversed`, `move_dim`, `squeeze`, `expand_dims`, `rename_dims`, `isel`, `take`, `flip`, `roll`, `concat`, `stack` |
-| Arithmetic | `add`, `sub`, `mul`, `div` (true division), `rem`, `pow`, `neg`, `abs`, operators `+ - * / % & \| ^ ! -` on `&NdArrowArray` |
+| Layout | `broadcast_to`, `broadcast_arrays`, `transpose`, `transpose_reversed`, `move_dim`, `squeeze`, `expand_dims`, `rename_dims`, `isel`, `take`, `flip`, `roll`, `concat`, `stack`, `pad`, `tile`, `repeat` |
+| Arithmetic | `add`, `sub`, `mul`, `div` (true division), `floor_divide`, `mod_`, `rem` (like `fmod`), `pow`, `neg`, `abs`, operators `+ - * / % & \| ^ ! -` on `&NdArrowArray` |
 | Comparison and logic | `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `logical_and`, `logical_or`, `logical_xor`, `logical_not` |
 | Math | `sqrt`, `cbrt`, `exp`, `expm1`, `log`, `log1p`, `log2`, `log10`, trigonometric and hyperbolic functions, `floor`, `ceil`, `trunc`, `round`, `deg2rad`, `rad2deg`, `isnan`, `isinf`, `isfinite` |
 | Missing values | `fill_null`, `where_`, `clip`, `nan_to_null`, `is_null_mask`, `is_not_null_mask`, `cast` |
 | CF conventions | `decode_cf` (mask `_FillValue`, `missing_value`, valid range; unpack `scale_factor` and `add_offset`), `encode_cf` |
-| Reductions | `sum`, `prod`, `mean`, `min`, `max`, `count`, `var`, `std`, `median`, `quantile`, `any`, `all`, `argmin`, `argmax`, `reduce` |
-| Scans | `cumsum`, `cumprod`, `diff` |
-| Search and sort | `searchsorted`, `sort`, `argsort`, `unique` |
-| Resampling | `interp` (linear), `rolling` (sum, mean, min, max, count), `groupby_reduce` |
+| CF time | `decode_cf_time` (`"days since 1950-01-01"` to `Timestamp(Microsecond)`), `encode_cf_time`, `floor_time`, `time_component` |
+| Reductions | `sum`, `prod`, `mean`, `min`, `max`, `count`, `var`, `std`, `median`, `quantile`, `any`, `all`, `argmin`, `argmax`, `ptp`, `reduce` |
+| Block and weighted | `coarsen`, `weighted_sum`, `weighted_mean`, `dot` |
+| Mergeable states | `PartialReduction` (`new`, `merge`, `finish`), `merge_all`: exact results across chunks |
+| Scans | `cumsum`, `cumprod`, `cummin`, `cummax`, `diff` |
+| Search and sort | `searchsorted`, `sort`, `argsort`, `unique`, `argwhere`, `isin`, `digitize` |
+| Counting | `histogram`, `bincount` |
+| Resampling | `interp` and `interp_with` (linear, nearest), `rolling` (sum, mean, min, max, count), `groupby_reduce` |
+| Whole columns | `column_unary`, `column_binary`, `column_cast`, `column_decode_cf`, `row_reduce`, `row_reduce_axes` |
 | Record batch | `materialize`, `isel`, `sel_range`, `sel_nearest`, `interp`, `coordinate` |
+
+Common kernels are also methods, for example `a.sum(Some(&["time"]))` and
+`a.transpose(&["lat", "time"])`. `NdArrowArray` prints like NumPy with
+`{}`, and summarizes arrays with more than 1000 values.
 
 Rules:
 
@@ -92,6 +104,8 @@ Rules:
 - Sums and products of integers widen to `Int64` or `UInt64`.
 - Statistics (`mean`, `var`, `std`, `median`, `quantile`) compute in `Float64`.
   The result is `Float32` for `Float32` input.
+- Float sums over a contiguous axis use NumPy's pairwise summation, so they
+  round exactly like NumPy.
 - Floats order NaN above all numbers, like Arrow. Use `nan_to_null` to treat NaN
   as missing.
 - Attributes follow xarray defaults. Layout kernels, `cast`, `where_`,
@@ -106,10 +120,31 @@ let tropics = compute::isel(&anomaly, &[("lat", Selector::Slice(Slice::range(60,
 let (decoded, encoding) = compute::decode_cf(&packed)?;
 ```
 
+## Interoperability
+
+- `tensor::to_variable_shape_tensor` and `tensor::to_fixed_shape_tensor`
+  convert an nd column to the Arrow canonical types
+  `arrow.variable_shape_tensor` and `arrow.fixed_shape_tensor`.
+  `tensor::column_from_field` reads nd and tensor columns. These types need
+  one set of dimension names per column, no attributes and no null elements.
+- With the `ndarray` feature: `NdArrowArray::to_ndarray` and
+  `NdArrowArray::from_ndarray`.
+
+## Features
+
+| Feature | Effect |
+|---|---|
+| `parallel` | Runs large gathers and contiguous reductions with rayon. |
+| `ndarray` | Adds conversion to and from `ndarray::ArrayD`. |
+
 ## Tests
 
 - Unit tests cover each kernel.
 - `tests/numpy.rs` compares the kernels with NumPy reference results in
   `tests/fixtures/numpy.json`. Regenerate the file with
   `python3 tests/fixtures/gen_numpy.py` (needs NumPy).
+- `tests/properties.rs` checks kernel identities on random shapes with proptest.
 - `cargo bench` runs the Criterion benchmarks in `benches/kernels.rs`.
+- CI (`.github/workflows/ci.yml`) runs `fmt`, `clippy`, the tests with and
+  without features, the docs, and the NumPy comparison against the latest
+  NumPy release.

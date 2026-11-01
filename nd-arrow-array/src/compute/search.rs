@@ -135,6 +135,83 @@ pub fn unique(a: &NdArrowArray, dim: &str) -> Result<NdArrowArray> {
     NdArrowArray::try_new(out, Dimensions::try_new([(dim, len)])?)
 }
 
+/// Indices of the `true` (or non-zero) elements, like `numpy.argwhere`.
+///
+/// The result is `Int64` with dimensions `(point, axis)`: one row per match,
+/// one column per axis of `a`, in C order. Nulls do not match.
+pub fn argwhere(a: &NdArrowArray) -> Result<NdArrowArray> {
+    let mask = truthy(a)?;
+    let strides = a.dims().c_strides();
+    let shape = a.shape();
+    let mut out: Vec<i64> = Vec::new();
+    for (position, value) in mask.iter().enumerate() {
+        if value == Some(true) {
+            out.extend(
+                strides
+                    .iter()
+                    .zip(&shape)
+                    .map(|(&stride, &size)| ((position / stride.max(1)) % size.max(1)) as i64),
+            );
+        }
+    }
+    let rank = a.rank();
+    let points = out.len().checked_div(rank).unwrap_or(mask.true_count());
+    NdArrowArray::try_new(
+        Arc::new(arrow::array::Int64Array::from(out)),
+        Dimensions::try_new([("point", points), ("axis", rank)])?,
+    )
+}
+
+fn truthy(a: &NdArrowArray) -> Result<arrow::array::BooleanArray> {
+    if a.data_type() == &arrow::datatypes::DataType::Boolean {
+        return Ok(a
+            .values()
+            .as_any()
+            .downcast_ref::<arrow::array::BooleanArray>()
+            .unwrap()
+            .clone());
+    }
+    let zero = arrow_cast(&arrow::array::Int8Array::from(vec![0]), a.data_type())?;
+    Ok(arrow::compute::kernels::cmp::neq(
+        a.values(),
+        &arrow::array::Scalar::new(zero),
+    )?)
+}
+
+/// `true` where the element is in `test_values`, like `numpy.isin`.
+/// A null element gives `false`.
+pub fn isin(a: &NdArrowArray, test_values: &ArrayRef) -> Result<NdArrowArray> {
+    let tests = arrow_cast(test_values.as_ref(), a.data_type())?;
+    let order = sort_to_indices(tests.as_ref(), Some(ASCENDING), None)?;
+    let sorted = arrow_take(tests.as_ref(), &order, None)?;
+    let valid = sorted.len() - sorted.null_count();
+    let compare = make_comparator(sorted.as_ref(), a.values().as_ref(), ASCENDING)?;
+    let out: arrow::array::BooleanArray = (0..a.len())
+        .map(|j| {
+            Some(
+                a.values().is_valid(j) && {
+                    let i = partition_point(valid, |i| compare(i, j) == Ordering::Less);
+                    i < valid && compare(i, j) == Ordering::Equal
+                },
+            )
+        })
+        .collect();
+    NdArrowArray::try_new(Arc::new(out), a.dims().clone())
+}
+
+/// The bin of each element for increasing `bins` edges, like `numpy.digitize`.
+///
+/// With `right == false`, element `x` gets `i` where `bins[i-1] <= x < bins[i]`.
+/// The result is `UInt64` with the dimensions of `a`.
+pub fn digitize(a: &NdArrowArray, bins: &NdArrowArray, right: bool) -> Result<NdArrowArray> {
+    let side = if right {
+        SearchSide::Left
+    } else {
+        SearchSide::Right
+    };
+    searchsorted(bins, a, side)
+}
+
 #[cfg(test)]
 mod tests {
     use arrow::array::{AsArray, Float64Array, Int32Array, StringArray};
@@ -187,6 +264,44 @@ mod tests {
         );
         let i = argsort(&a, "y", false).unwrap();
         assert_eq!(u64s(&i), [1, 2, 0, 1, 2, 0].map(Some).to_vec());
+    }
+
+    #[test]
+    fn argwhere_isin_digitize() {
+        let a = nd(
+            Arc::new(Int32Array::from(vec![0, 3, 0, 5, 6, 0])),
+            &[("y", 2), ("x", 3)],
+        );
+        let w = argwhere(&a).unwrap();
+        assert_eq!(w.shape(), vec![3, 2]);
+        let v: Vec<i64> = w
+            .values()
+            .as_primitive::<arrow::datatypes::Int64Type>()
+            .values()
+            .to_vec();
+        assert_eq!(v, vec![0, 1, 1, 0, 1, 1]);
+
+        let tests: ArrayRef = Arc::new(Int32Array::from(vec![Some(6), None, Some(3)]));
+        let m = isin(&a, &tests).unwrap();
+        let m: Vec<bool> = m.values().as_boolean().iter().map(Option::unwrap).collect();
+        assert_eq!(m, vec![false, true, false, false, true, false]);
+
+        let bins = nd(
+            Arc::new(Float64Array::from(vec![0.0, 1.0, 2.5])),
+            &[("edge", 3)],
+        );
+        let x = nd(
+            Arc::new(Float64Array::from(vec![-1.0, 0.0, 1.0, 2.0, 3.0])),
+            &[("x", 5)],
+        );
+        assert_eq!(
+            u64s(&digitize(&x, &bins, false).unwrap()),
+            [0, 1, 2, 2, 3].map(Some).to_vec()
+        );
+        assert_eq!(
+            u64s(&digitize(&x, &bins, true).unwrap()),
+            [0, 0, 1, 2, 3].map(Some).to_vec()
+        );
     }
 
     #[test]

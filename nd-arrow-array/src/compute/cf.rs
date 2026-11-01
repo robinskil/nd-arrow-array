@@ -31,6 +31,11 @@ const CF_KEYS: [&str; 7] = [
     ADD_OFFSET,
 ];
 
+/// True for the attribute keys that [`decode_cf`] uses.
+pub fn is_cf_key(key: &str) -> bool {
+    CF_KEYS.contains(&key)
+}
+
 /// The CF keys that [`decode_cf`] removed, plus the packed value type.
 /// [`encode_cf`] uses it to restore the packed form.
 #[derive(Debug, Clone, PartialEq)]

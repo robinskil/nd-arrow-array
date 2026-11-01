@@ -2,12 +2,14 @@
 
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, AsArray, Float64Array};
+use arrow::array::{Array, ArrayRef, AsArray, BooleanArray, Float64Array};
 use arrow::compute::cast as arrow_cast;
 use arrow::datatypes::{DataType, Float64Type};
 
 use crate::NdArrowArray;
+use crate::compute::elementwise::where_;
 use crate::compute::search::partition_point;
+use crate::compute::shape::take;
 use crate::dimensions::{Dimension, Dimensions};
 use crate::error::{Result, nd_err};
 
@@ -15,6 +17,16 @@ fn to_f64(values: &ArrayRef) -> Result<Float64Array> {
     Ok(arrow_cast(values.as_ref(), &DataType::Float64)?
         .as_primitive::<Float64Type>()
         .clone())
+}
+
+/// How [`interp_with`] picks values between coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InterpMethod {
+    /// Linear interpolation. The result is floating point.
+    #[default]
+    Linear,
+    /// The value at the nearest coordinate (the lower one on a tie). Keeps the type.
+    Nearest,
 }
 
 /// Interpolate `a` linearly along `dim` from coordinates `x` to `new_x`,
@@ -30,6 +42,31 @@ pub fn interp(
     x: &NdArrowArray,
     new_x: &NdArrowArray,
 ) -> Result<NdArrowArray> {
+    interp_with(a, dim, x, new_x, InterpMethod::Linear)
+}
+
+/// Interpolate along `dim` with `method`, see [`interp`].
+pub fn interp_with(
+    a: &NdArrowArray,
+    dim: &str,
+    x: &NdArrowArray,
+    new_x: &NdArrowArray,
+    method: InterpMethod,
+) -> Result<NdArrowArray> {
+    let plan = target_plan(a, dim, x, new_x)?;
+    match method {
+        InterpMethod::Linear => interp_linear(a, dim, &plan),
+        InterpMethod::Nearest => interp_nearest(a, dim, &plan),
+    }
+}
+
+/// Per target: (lower index, weight of the upper neighbor), or `None` outside the range.
+fn target_plan(
+    a: &NdArrowArray,
+    dim: &str,
+    x: &NdArrowArray,
+    new_x: &NdArrowArray,
+) -> Result<Vec<Option<(usize, f64)>>> {
     let axis = a.dims().axis(dim)?;
     let n = a.dims().as_slice()[axis].size();
     if x.rank() != 1 || x.len() != n {
@@ -51,7 +88,6 @@ pub fn interp(
     let xs = xs.values();
     let targets = to_f64(new_x.values())?;
 
-    // Per target: (lower index, weight of the upper neighbor), or None.
     let plan: Vec<Option<(usize, f64)>> = targets
         .iter()
         .map(|t| {
@@ -67,6 +103,42 @@ pub fn interp(
             Some((lower, (t - xs[lower]) / (xs[upper] - xs[lower])))
         })
         .collect();
+    Ok(plan)
+}
+
+fn interp_nearest(
+    a: &NdArrowArray,
+    dim: &str,
+    plan: &[Option<(usize, f64)>],
+) -> Result<NdArrowArray> {
+    let indices: Vec<isize> = plan
+        .iter()
+        .map(|p| p.map_or(0, |(lower, w)| if w <= 0.5 { lower } else { lower + 1 }) as isize)
+        .collect();
+    if plan.iter().all(Option::is_some) {
+        return take(a, dim, &indices);
+    }
+    let picked = take(a, dim, &indices)?;
+    let valid = NdArrowArray::try_new(
+        Arc::new(BooleanArray::from_iter(
+            plan.iter().map(|p| Some(p.is_some())),
+        )),
+        Dimensions::try_new([(dim, plan.len())])?,
+    )?;
+    where_(
+        &valid,
+        &picked,
+        &NdArrowArray::new_null_scalar(a.data_type()),
+    )
+}
+
+fn interp_linear(
+    a: &NdArrowArray,
+    dim: &str,
+    plan: &[Option<(usize, f64)>],
+) -> Result<NdArrowArray> {
+    let axis = a.dims().axis(dim)?;
+    let n = a.dims().as_slice()[axis].size();
 
     let values = to_f64(a.values())?;
     let shape = a.shape();
@@ -76,7 +148,7 @@ pub fn interp(
     let mut out: Vec<Option<f64>> = Vec::with_capacity(outer * m * inner);
     let get = |p: usize| values.is_valid(p).then(|| values.value(p));
     for o in 0..outer {
-        for step in &plan {
+        for step in plan {
             for j in 0..inner {
                 out.push(step.and_then(|(lower, w)| {
                     let low = get((o * n + lower) * inner + j)?;
@@ -145,6 +217,26 @@ mod tests {
                 None
             ]
         );
+    }
+
+    #[test]
+    fn nearest_keeps_type() {
+        let a = nd(Arc::new(Int32Array::from(vec![10, 20, 30])), &[("x", 3)]);
+        let x = nd(
+            Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0])),
+            &[("x", 3)],
+        );
+        let new_x = nd(
+            Arc::new(Float64Array::from(vec![0.4, 0.5, 1.6, 9.0])),
+            &[("x", 4)],
+        );
+        let out = interp_with(&a, "x", &x, &new_x, InterpMethod::Nearest).unwrap();
+        let v: Vec<Option<i32>> = out
+            .values()
+            .as_primitive::<arrow::datatypes::Int32Type>()
+            .iter()
+            .collect();
+        assert_eq!(v, vec![Some(10), Some(10), Some(30), None]);
     }
 
     #[test]

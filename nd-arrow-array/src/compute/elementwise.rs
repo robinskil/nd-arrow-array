@@ -229,6 +229,82 @@ pub fn rem(a: &NdArrowArray, b: &NdArrowArray) -> Result<NdArrowArray> {
     )
 }
 
+/// Floor division `a // b`, like `numpy.floor_divide`.
+/// Integer division by zero gives null.
+pub fn floor_divide(a: &NdArrowArray, b: &NdArrowArray) -> Result<NdArrowArray> {
+    floor_div_mod(a, b, false)
+}
+
+/// Remainder with the sign of `b`, like `numpy.mod` (Python `%`).
+/// Integer division by zero gives null.
+pub fn mod_(a: &NdArrowArray, b: &NdArrowArray) -> Result<NdArrowArray> {
+    floor_div_mod(a, b, true)
+}
+
+fn floor_div_mod(a: &NdArrowArray, b: &NdArrowArray, modulo: bool) -> Result<NdArrowArray> {
+    let to = result_type(a.data_type(), b.data_type()).ok_or_else(|| {
+        nd_err!(
+            NotSupported,
+            "floor division on {} and {}",
+            a.data_type(),
+            b.data_type()
+        )
+    })?;
+    let aligned = broadcast_arrays(&[a, b])?;
+    let dims = aligned[0].dims().clone();
+    let values: ArrayRef = match kind(&to) {
+        Some(Kind::Float(bits)) => {
+            let x = cast_values(aligned[0].values(), &DataType::Float64)?;
+            let y = cast_values(aligned[1].values(), &DataType::Float64)?;
+            let out = arrow::compute::binary::<_, _, _, Float64Type>(
+                x.as_primitive::<Float64Type>(),
+                y.as_primitive::<Float64Type>(),
+                |x, y| {
+                    if modulo {
+                        let r = x % y;
+                        if r != 0.0 && (r < 0.0) != (y < 0.0) {
+                            r + y
+                        } else {
+                            r
+                        }
+                    } else {
+                        (x / y).floor()
+                    }
+                },
+            )?;
+            let to = if bits == 64 {
+                DataType::Float64
+            } else {
+                to.clone()
+            };
+            cast_values(&(Arc::new(out) as ArrayRef), &to)?
+        }
+        Some(Kind::Int(_) | Kind::UInt(_) | Kind::Bool) => {
+            let x = cast_values(aligned[0].values(), &DataType::Int64)?;
+            let y = cast_values(aligned[1].values(), &DataType::Int64)?;
+            let (x, y) = (x.as_primitive::<Int64Type>(), y.as_primitive::<Int64Type>());
+            let out: arrow::array::Int64Array = x
+                .iter()
+                .zip(y.iter())
+                .map(|(x, y)| match (x, y) {
+                    (Some(_), Some(0)) | (None, _) | (_, None) => None,
+                    (Some(x), Some(y)) => {
+                        let q = x.wrapping_div(y) - i64::from(x % y != 0 && ((x < 0) != (y < 0)));
+                        Some(if modulo {
+                            x.wrapping_sub(q.wrapping_mul(y))
+                        } else {
+                            q
+                        })
+                    }
+                })
+                .collect();
+            cast_values(&(Arc::new(out) as ArrayRef), &to)?
+        }
+        None => unreachable!("result_type returned a numeric type"),
+    };
+    wrap(values, dims)
+}
+
 /// `a ** b` in floating point, like `numpy.float_power`.
 pub fn pow(a: &NdArrowArray, b: &NdArrowArray) -> Result<NdArrowArray> {
     let to = result_type(a.data_type(), b.data_type()).ok_or_else(|| {
