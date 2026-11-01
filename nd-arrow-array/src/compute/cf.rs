@@ -13,12 +13,19 @@ use crate::compute::elementwise::{add, cast, div, fill_null, mul, round, sub};
 use crate::error::{Result, nd_err};
 use crate::{Attributes, NdArrowArray};
 
+/// CF attribute: the value that marks missing data.
 pub const FILL_VALUE: &str = "_FillValue";
+/// CF attribute: one or more values that mark missing data.
 pub const MISSING_VALUE: &str = "missing_value";
+/// CF attribute: the smallest valid value.
 pub const VALID_MIN: &str = "valid_min";
+/// CF attribute: the largest valid value.
 pub const VALID_MAX: &str = "valid_max";
+/// CF attribute: the smallest and largest valid values.
 pub const VALID_RANGE: &str = "valid_range";
+/// CF attribute: the multiplier to unpack values.
 pub const SCALE_FACTOR: &str = "scale_factor";
+/// CF attribute: the offset to unpack values.
 pub const ADD_OFFSET: &str = "add_offset";
 
 const CF_KEYS: [&str; 7] = [
@@ -40,7 +47,9 @@ pub fn is_cf_key(key: &str) -> bool {
 /// [`encode_cf`] uses it to restore the packed form.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfEncoding {
+    /// The CF attributes that the decode removed.
     pub attributes: Attributes,
+    /// The value type before the decode.
     pub packed_type: DataType,
 }
 

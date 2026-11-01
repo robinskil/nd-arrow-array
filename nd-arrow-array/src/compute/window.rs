@@ -12,10 +12,15 @@ use crate::error::{Result, nd_err};
 /// The statistic of each window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RollingOp {
+    /// Sum of the window.
     Sum,
+    /// Mean of the window.
     Mean,
+    /// Smallest value of the window.
     Min,
+    /// Largest value of the window.
     Max,
+    /// Number of non-null values in the window.
     Count,
 }
 

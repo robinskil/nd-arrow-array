@@ -30,7 +30,9 @@ use crate::dimensions::Dimensions;
 use crate::error::{Result, nd_err};
 use crate::extension::is_nd_field;
 
+/// Extension name of the Arrow canonical fixed shape tensor.
 pub const FIXED_SHAPE_TENSOR: &str = "arrow.fixed_shape_tensor";
+/// Extension name of the Arrow canonical variable shape tensor.
 pub const VARIABLE_SHAPE_TENSOR: &str = "arrow.variable_shape_tensor";
 
 #[derive(Debug, Default, Serialize, Deserialize)]

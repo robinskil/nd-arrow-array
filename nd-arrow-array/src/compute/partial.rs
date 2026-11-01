@@ -108,6 +108,7 @@ impl PartialReduction {
         })
     }
 
+    /// The dimensions of the result.
     pub fn dims(&self) -> &Dimensions {
         &self.dims
     }

@@ -82,10 +82,12 @@ impl NdColumn {
         Self { storage, extension }
     }
 
+    /// The extension type of the column.
     pub fn extension_type(&self) -> &NdArrayType {
         &self.extension
     }
 
+    /// The Arrow type of the array values.
     pub fn value_type(&self) -> &DataType {
         self.extension.value_type()
     }
@@ -95,18 +97,22 @@ impl NdColumn {
         self.extension.to_field(name, true)
     }
 
+    /// The number of rows.
     pub fn len(&self) -> usize {
         self.storage.len()
     }
 
+    /// True when the column has no rows.
     pub fn is_empty(&self) -> bool {
         self.storage.is_empty()
     }
 
+    /// True when `row` is null.
     pub fn is_null(&self, row: usize) -> bool {
         self.storage.is_null(row)
     }
 
+    /// The number of null rows.
     pub fn null_count(&self) -> usize {
         self.storage.null_count()
     }
@@ -146,10 +152,12 @@ impl NdColumn {
         Dimensions::try_new(dims).expect("validated")
     }
 
+    /// The array of each row, `None` for null rows.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = Option<NdArrowArray>> + '_ {
         (0..self.len()).map(|row| self.get(row))
     }
 
+    /// A zero-copy slice of `len` rows from `offset`.
     pub fn slice(&self, offset: usize, len: usize) -> Self {
         Self {
             storage: self.storage.slice(offset, len),
@@ -173,14 +181,17 @@ impl NdColumn {
         })
     }
 
+    /// The storage `Struct` array.
     pub fn storage(&self) -> &StructArray {
         &self.storage
     }
 
+    /// The storage `Struct` array, by value.
     pub fn into_storage(self) -> StructArray {
         self.storage
     }
 
+    /// The storage as an [`ArrayRef`].
     pub fn into_array_ref(self) -> ArrayRef {
         Arc::new(self.storage)
     }
@@ -304,6 +315,7 @@ pub struct NdColumnBuilder {
 }
 
 impl NdColumnBuilder {
+    /// A builder that takes the value type from the first array.
     pub fn new() -> Self {
         Self::default()
     }
@@ -325,14 +337,17 @@ impl NdColumnBuilder {
         }
     }
 
+    /// The number of rows appended.
     pub fn len(&self) -> usize {
         self.rows.len()
     }
 
+    /// True when no rows were appended.
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
+    /// Append one array as a row. Its value type must match the column.
     pub fn append(&mut self, array: &NdArrowArray) -> Result<()> {
         match &self.value_field {
             Some(field) if field.data_type() != array.data_type() => {
@@ -356,10 +371,12 @@ impl NdColumnBuilder {
         Ok(())
     }
 
+    /// Append a null row.
     pub fn append_null(&mut self) {
         self.rows.push(None);
     }
 
+    /// Append an array, or a null row for `None`.
     pub fn append_option(&mut self, array: Option<&NdArrowArray>) -> Result<()> {
         match array {
             Some(array) => self.append(array),
@@ -370,6 +387,7 @@ impl NdColumnBuilder {
         }
     }
 
+    /// Encode the rows. Fails when no value type is known.
     pub fn finish(self) -> Result<NdColumn> {
         let value_field = self.value_field.ok_or_else(|| {
             nd_err!(

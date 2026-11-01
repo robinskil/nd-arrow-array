@@ -14,12 +14,16 @@ use crate::error::{Result, nd_err};
 /// A Python-style slice: `start:stop:step`. Negative indices count from the end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Slice {
+    /// First index. `None` is the start of the axis (the end for a negative step).
     pub start: Option<isize>,
+    /// Index after the last one. `None` is past the end of the axis.
     pub stop: Option<isize>,
+    /// Distance between indices. Negative steps go backward. Zero is an error.
     pub step: isize,
 }
 
 impl Slice {
+    /// A slice `start:stop:step`.
     pub fn new(start: Option<isize>, stop: Option<isize>, step: isize) -> Self {
         Self { start, stop, step }
     }

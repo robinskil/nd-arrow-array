@@ -17,7 +17,9 @@ use crate::compute::cf::decode_cf;
 use crate::error::{Result, nd_err};
 use crate::{Attributes, NdArrowArray};
 
+/// CF attribute: the time unit and reference, for example `days since 1950-01-01`.
 pub const UNITS: &str = "units";
+/// CF attribute: the calendar of the time values.
 pub const CALENDAR: &str = "calendar";
 
 const MICROS_PER_SECOND: i64 = 1_000_000;
@@ -31,7 +33,9 @@ pub fn timestamp_type() -> DataType {
 /// A parsed CF time unit: microseconds per step and the reference instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CfTimeUnits {
+    /// Microseconds per unit step.
     pub step_micros: i64,
+    /// The reference instant, in microseconds since 1970-01-01.
     pub reference_micros: i64,
 }
 
@@ -216,11 +220,17 @@ fn to_micros(a: &NdArrowArray) -> Result<TimestampMicrosecondArray> {
 /// Calendar periods for [`floor_time`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimePeriod {
+    /// The start of the year.
     Year,
+    /// The start of the month.
     Month,
+    /// The start of the day.
     Day,
+    /// The start of the hour.
     Hour,
+    /// The start of the minute.
     Minute,
+    /// The start of the second.
     Second,
 }
 

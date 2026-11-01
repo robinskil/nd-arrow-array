@@ -26,25 +26,35 @@ use crate::error::{Result, nd_err};
 /// A reduction for [`reduce`] and [`groupby_reduce`](crate::compute::groupby_reduce).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reduction {
+    /// Sum of the values.
     Sum,
+    /// Product of the values.
     Prod,
+    /// Arithmetic mean.
     Mean,
+    /// Smallest value.
     Min,
+    /// Largest value.
     Max,
     /// Number of non-null values.
     Count,
     /// Variance with `ddof` delta degrees of freedom, like `numpy.var`.
     Var {
+        /// Delta degrees of freedom: the divisor is `n - ddof`.
         ddof: usize,
     },
     /// Standard deviation with `ddof` delta degrees of freedom, like `numpy.std`.
     Std {
+        /// Delta degrees of freedom: the divisor is `n - ddof`.
         ddof: usize,
     },
+    /// Middle value, with linear interpolation.
     Median,
     /// Quantile `q` in `[0, 1]` with linear interpolation, like `numpy.quantile`.
     Quantile(f64),
+    /// `true` when any value is `true` or non-zero.
     Any,
+    /// `true` when all values are `true` or non-zero.
     All,
     /// Index of the first minimum along the reduced axis (or the flat index for all axes).
     ArgMin,

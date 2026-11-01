@@ -12,11 +12,47 @@
 //! }
 //! ```
 //!
-//! A column without attributes leaves out the `attrs` field, so no storage
-//! format needs to support a struct with zero fields.
+//! The field carries `ARROW:extension:name = nd_arrow.array` and
+//! `ARROW:extension:metadata = {"version":1}`, so the intent survives IPC,
+//! Parquet and any engine that keeps field metadata.
 //!
-//! The field carries `ARROW:extension:name = nd_arrow.array`, so the intent
-//! survives IPC, Parquet and any engine that keeps field metadata.
+//! # Rules
+//!
+//! `FORMAT.md` in the repository is the full, language-neutral specification.
+//! This section is a summary.
+//!
+//! - The field order is fixed: `values`, `dim_names`, `dim_sizes`, then `attrs`
+//!   if present.
+//! - A column without attributes leaves out the `attrs` field, so no storage
+//!   format needs a struct with zero fields. Readers also accept an `attrs`
+//!   struct with zero fields and treat it as no attributes.
+//! - `dim_names` and `dim_sizes` have the same length. This length is the rank.
+//! - The length of `values` is the product of `dim_sizes`.
+//! - Rank 0 (empty dimension lists) is a scalar with one value.
+//! - Dimension names are not empty and are unique in a row.
+//! - Validity of elements is in the null buffer of `values`. There is no fill value.
+//! - An attribute can be any Arrow type. The `attrs` struct holds the union of
+//!   the keys of all rows. A null child means that the row does not have that key.
+//! - A null row decodes to a rank-0 null scalar.
+//!
+//! # Example
+//!
+//! A `(time=2, lat=3)` array of `Float64` with `units = "K"`:
+//!
+//! ```text
+//! values:    [0.0, 0.1, 0.2, 1.0, 1.1, 1.2]
+//! dim_names: ["time", "lat"]
+//! dim_sizes: [2, 3]
+//! attrs:     { units: "K" }
+//! ```
+//!
+//! # Global attributes
+//!
+//! An encoded record batch (see [`encode_batches`](crate::encode_batches))
+//! stores the global attributes of each nd batch in one extra column,
+//! [`GLOBAL_ATTRIBUTES_FIELD`], tagged with [`GLOBAL_ATTRIBUTES_EXTENSION`].
+//! It has one row per nd batch and the union of keys, with the same null rule
+//! as `attrs`. The column is left out when no batch has global attributes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,9 +66,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, nd_err};
 
+/// Storage field with the flat values.
 pub const VALUES_FIELD: &str = "values";
+/// Storage field with the dimension names.
 pub const DIM_NAMES_FIELD: &str = "dim_names";
+/// Storage field with the dimension sizes.
 pub const DIM_SIZES_FIELD: &str = "dim_sizes";
+/// Optional storage field with the attributes.
 pub const ATTRS_FIELD: &str = "attrs";
 
 /// Name of the list item field in `values`, `dim_names` and `dim_sizes`.
@@ -44,6 +84,7 @@ pub const ENCODING_VERSION: u32 = 1;
 /// Extension metadata, serialized as JSON in `ARROW:extension:metadata`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NdArrayMetadata {
+    /// The encoding version.
     pub version: u32,
 }
 
@@ -89,14 +130,17 @@ impl NdArrayType {
         }
     }
 
+    /// The item field of the `values` list.
     pub fn value_field(&self) -> &FieldRef {
         &self.value_field
     }
 
+    /// The Arrow type of the array values.
     pub fn value_type(&self) -> &DataType {
         self.value_field.data_type()
     }
 
+    /// One field per attribute key. Empty when there are no attributes.
     pub fn attribute_fields(&self) -> &Fields {
         &self.attrs
     }

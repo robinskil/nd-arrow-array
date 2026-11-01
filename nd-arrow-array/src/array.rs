@@ -28,6 +28,7 @@ impl PartialEq for NdArrowArray {
 }
 
 impl NdArrowArray {
+    /// Create an array. The length of `values` must equal the number of elements of `dims`.
     pub fn try_new(values: ArrayRef, dims: Dimensions) -> Result<Self> {
         if dims.checked_num_elements() != Some(values.len()) {
             return Err(nd_err!(
@@ -63,35 +64,43 @@ impl NdArrowArray {
         }
     }
 
+    /// Replace the attributes.
     pub fn with_attributes(mut self, attrs: Attributes) -> Self {
         self.attrs = attrs;
         self
     }
 
+    /// The flat values in C order.
     pub fn values(&self) -> &ArrayRef {
         &self.values
     }
 
+    /// The named dimensions.
     pub fn dims(&self) -> &Dimensions {
         &self.dims
     }
 
+    /// The attributes.
     pub fn attributes(&self) -> &Attributes {
         &self.attrs
     }
 
+    /// The attributes, for changes in place.
     pub fn attributes_mut(&mut self) -> &mut Attributes {
         &mut self.attrs
     }
 
+    /// The Arrow type of the values.
     pub fn data_type(&self) -> &DataType {
         self.values.data_type()
     }
 
+    /// The size of each axis.
     pub fn shape(&self) -> Vec<usize> {
         self.dims.shape()
     }
 
+    /// The number of axes.
     pub fn rank(&self) -> usize {
         self.dims.rank()
     }
@@ -101,10 +110,12 @@ impl NdArrowArray {
         self.values.len()
     }
 
+    /// True when the array has no elements.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
+    /// True for rank 0.
     pub fn is_scalar(&self) -> bool {
         self.dims.is_scalar()
     }
@@ -116,6 +127,7 @@ impl NdArrowArray {
         Ok(Self::try_new(self.values, dims)?.with_attributes(attrs))
     }
 
+    /// Split into values, dimensions and attributes.
     pub fn into_parts(self) -> (ArrayRef, Dimensions, Attributes) {
         (self.values, self.dims, self.attrs)
     }

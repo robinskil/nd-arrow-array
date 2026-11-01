@@ -18,6 +18,7 @@ pub struct Dimension {
 }
 
 impl Dimension {
+    /// A dimension named `name` with `size` positions.
     pub fn new(name: impl Into<Arc<str>>, size: usize) -> Self {
         Self {
             name: name.into(),
@@ -25,10 +26,12 @@ impl Dimension {
         }
     }
 
+    /// The name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The number of positions.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -81,30 +84,37 @@ impl Dimensions {
         Self::default()
     }
 
+    /// The number of axes.
     pub fn rank(&self) -> usize {
         self.dims.len()
     }
 
+    /// True for rank 0.
     pub fn is_scalar(&self) -> bool {
         self.dims.is_empty()
     }
 
+    /// The axes, outermost first.
     pub fn iter(&self) -> std::slice::Iter<'_, Dimension> {
         self.dims.iter()
     }
 
+    /// The axes as a slice.
     pub fn as_slice(&self) -> &[Dimension] {
         &self.dims
     }
 
+    /// The dimension at `axis`, if present.
     pub fn get(&self, axis: usize) -> Option<&Dimension> {
         self.dims.get(axis)
     }
 
+    /// The size of each axis.
     pub fn shape(&self) -> Vec<usize> {
         self.dims.iter().map(Dimension::size).collect()
     }
 
+    /// The name of each axis.
     pub fn names(&self) -> Vec<&str> {
         self.dims.iter().map(Dimension::name).collect()
     }
@@ -121,10 +131,12 @@ impl Dimensions {
             .try_fold(1usize, |acc, d| acc.checked_mul(d.size()))
     }
 
+    /// The axis of `name`, if present.
     pub fn position(&self, name: &str) -> Option<usize> {
         self.dims.iter().position(|d| d.name() == name)
     }
 
+    /// True when dimension `name` exists.
     pub fn contains(&self, name: &str) -> bool {
         self.position(name).is_some()
     }

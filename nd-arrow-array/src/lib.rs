@@ -44,6 +44,8 @@
 //! # }
 //! ```
 
+#![warn(missing_docs)]
+
 pub mod array;
 pub mod attributes;
 pub mod batch;

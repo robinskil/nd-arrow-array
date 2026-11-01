@@ -27,14 +27,17 @@ pub struct Attributes {
 }
 
 impl Attributes {
+    /// Empty attributes.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// The number of attributes.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// True when there are no attributes.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -47,6 +50,7 @@ impl Attributes {
             .map(|(_, value)| value)
     }
 
+    /// True when attribute `name` exists.
     pub fn contains(&self, name: &str) -> bool {
         self.get(name).is_some()
     }
@@ -91,6 +95,7 @@ impl Attributes {
         self
     }
 
+    /// Remove attribute `name` and return its value.
     pub fn remove(&mut self, name: &str) -> Option<ArrayRef> {
         let index = self
             .entries
@@ -99,6 +104,7 @@ impl Attributes {
         Some(self.entries.remove(index).1)
     }
 
+    /// The attributes in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ArrayRef)> {
         self.entries
             .iter()
@@ -199,6 +205,7 @@ pub(crate) fn attribute_field(name: &str, data_type: &DataType) -> FieldRef {
 
 /// Conversion of a Rust value into a length-1 Arrow array (a scalar).
 pub trait IntoScalar {
+    /// The value as an Arrow array of length 1.
     fn into_scalar(self) -> ArrayRef;
 }
 

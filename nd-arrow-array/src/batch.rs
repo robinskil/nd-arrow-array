@@ -31,6 +31,8 @@ pub struct NdRecordBatch {
 }
 
 impl NdRecordBatch {
+    /// Create a batch. The schema must match the column types, and every column
+    /// must broadcast onto `target`.
     pub fn try_new(
         schema: SchemaRef,
         columns: Vec<NdArrowArray>,
@@ -75,6 +77,7 @@ impl NdRecordBatch {
         &self.attributes
     }
 
+    /// The global attributes, for changes in place.
     pub fn attributes_mut(&mut self) -> &mut Attributes {
         &mut self.attributes
     }
@@ -85,27 +88,33 @@ impl NdRecordBatch {
         Self::try_new(schema, columns, target)
     }
 
+    /// The logical schema: one field per column, typed by its values.
     pub fn schema(&self) -> &SchemaRef {
         &self.schema
     }
 
+    /// All columns, in schema order.
     pub fn columns(&self) -> &[NdArrowArray] {
         &self.columns
     }
 
+    /// The column at `index`. Panics when `index` is out of bounds.
     pub fn column(&self, index: usize) -> &NdArrowArray {
         &self.columns[index]
     }
 
+    /// The column named `name`, if present.
     pub fn column_by_name(&self, name: &str) -> Option<&NdArrowArray> {
         let index = self.schema.index_of(name).ok()?;
         Some(&self.columns[index])
     }
 
+    /// The number of columns.
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
 
+    /// The shared target grid.
     pub fn target(&self) -> &Dimensions {
         &self.target
     }
