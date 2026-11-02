@@ -198,6 +198,11 @@ fn import_record_batches(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch>> {
             .as_any()
             .downcast_ref::<StructArray>()
             .ok_or_else(|| PyTypeError::new_err("expected a record batch or a struct array"))?;
+        if structs.null_count() > 0 {
+            return Err(PyTypeError::new_err(
+                "a record batch cannot come from a struct array with null rows",
+            ));
+        }
         let batch = RecordBatch::from(structs.clone());
         let schema = batch
             .schema()

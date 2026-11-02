@@ -82,3 +82,14 @@ def test_nat_becomes_null():
 def test_object_dtype_raises_type_error():
     with pytest.raises(TypeError):
         _core._roundtrip_numpy(np.array([{}], dtype=object))
+
+
+def test_masked_non_contiguous():
+    base = np.ma.array(np.arange(10.0), mask=np.arange(10) % 3 == 0)
+    for view in (base[::2], base[::-1]):
+        back = _core._roundtrip_numpy(view)
+        np.testing.assert_array_equal(np.ma.getmaskarray(back), np.ma.getmaskarray(view))
+        np.testing.assert_array_equal(back.compressed(), view.compressed())
+    grid = np.ma.array(np.arange(12.0).reshape(3, 4), mask=np.arange(12).reshape(3, 4) % 5 == 0)
+    back = _core._roundtrip_numpy(grid[:, ::2])
+    np.testing.assert_array_equal(np.ma.getmaskarray(back), np.ma.getmaskarray(grid[:, ::2]))

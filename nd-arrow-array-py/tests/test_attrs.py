@@ -54,3 +54,8 @@ def test_unsupported_value_raises():
 def test_non_str_key_raises():
     with pytest.raises(TypeError):
         _core._roundtrip_attrs({1: "a"})
+
+
+def test_null_attribute_value_raises():
+    with pytest.raises(ValueError):
+        _core._roundtrip_attrs({"d": np.datetime64("NaT", "s")})

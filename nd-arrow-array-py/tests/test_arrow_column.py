@@ -70,3 +70,33 @@ def test_attribute_without_numpy_dtype_uses_pyarrow():
     a = make()
     a.set_attr("d", pa.scalar(decimal.Decimal("1.50"), type=pa.decimal128(5, 2)))
     assert a.attrs["d"] == decimal.Decimal("1.50")
+
+
+def test_sliced_column_with_attrs():
+    a = make()
+    b = make().with_attrs({"units": "degC"})
+    c = make().with_attrs({})
+    sliced = nda.NdColumn.from_arrays([a, b, c]).to_arrow().slice(1, 2)
+    back = nda.NdColumn.from_arrow(sliced)
+    assert len(back) == 2
+    assert back[0] == b
+    assert back[1] == c
+
+
+def test_sliced_record_batch():
+    import numpy as np
+
+    rows = [
+        nda.NdRecordBatch({"v": make().with_attrs({"n": i})}, attrs={"i": i})
+        for i in range(3)
+    ]
+    rb = nda.encode_batches(rows).slice(1, 1)
+    (back,) = nda.NdRecordBatch.from_arrow(rb)
+    assert back.attrs == {"i": 1}
+    assert back["v"].attrs == {"n": 1}
+    np.testing.assert_array_equal(back["v"].to_numpy(), make().to_numpy())
+
+
+def test_from_arrow_rejects_struct_with_null_rows():
+    with pytest.raises((TypeError, ValueError)):
+        nda.NdRecordBatch.from_arrow(pa.array([{"a": 1}, None]))

@@ -306,7 +306,10 @@ fn string_values<O: arrow::array::OffsetSizeTrait>(
 }
 
 fn mask_to_nulls(mask: &Bound<'_, PyAny>) -> PyResult<Option<NullBuffer>> {
-    let flat = mask.call_method1("reshape", (-1,))?;
+    let np = mask.py().import("numpy")?;
+    let flat = np
+        .call_method1("ascontiguousarray", (mask,))?
+        .call_method1("reshape", (-1,))?;
     let flat = flat.extract::<PyReadonlyArrayDyn<'_, bool>>()?;
     let masked = flat.as_slice()?;
     if !masked.contains(&true) {

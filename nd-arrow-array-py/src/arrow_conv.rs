@@ -1,9 +1,10 @@
 //! Arrow C data interface: import and export through PyCapsules.
 
 use std::ffi::CString;
+use std::sync::Arc;
 
-use arrow::array::{ArrayRef, make_array};
-use arrow::datatypes::Field;
+use arrow::array::{Array, ArrayData, ArrayRef, StructArray, make_array};
+use arrow::datatypes::{DataType, Field};
 use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi, to_ffi};
 use nd_arrow_array::NdColumn;
 use nd_arrow_array::tensor::column_from_field;
@@ -44,7 +45,25 @@ pub fn import_array(obj: &Bound<'_, PyAny>) -> PyResult<(Field, ArrayRef)> {
         let ffi_array = FFI_ArrowArray::from_raw(array_ptr.as_ptr());
         (field, from_ffi(ffi_array, schema).map_err(arrow_err)?)
     };
-    Ok((field, make_array(data)))
+    Ok((field, array_from_data(data)?))
+}
+
+/// An array from imported data, with every struct offset moved to its children.
+fn array_from_data(data: ArrayData) -> PyResult<ArrayRef> {
+    let DataType::Struct(fields) = data.data_type().clone() else {
+        return Ok(make_array(data));
+    };
+    // arrow-rs slices the children of a nested struct twice when the parent
+    // has an offset, so slice each child here and build the struct at offset 0.
+    let (offset, len) = (data.offset(), data.len());
+    let children = data
+        .child_data()
+        .iter()
+        .map(|child| Ok(array_from_data(child.clone())?.slice(offset, len)))
+        .collect::<PyResult<Vec<_>>>()?;
+    let array = StructArray::try_new_with_length(fields, children, data.nulls().cloned(), len)
+        .map_err(arrow_err)?;
+    Ok(Arc::new(array))
 }
 
 /// The `(schema, array)` capsule pair for `__arrow_c_array__`.

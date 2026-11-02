@@ -45,8 +45,19 @@ pub fn attributes_to_dict<'py>(
     Ok(dict)
 }
 
-/// One Python attribute value as a length-1 Arrow array.
+/// One Python attribute value as a length-1 Arrow array. A null value is an
+/// error, because a null attribute means an absent key in the format.
 pub fn value_to_arrow(value: &Bound<'_, PyAny>) -> PyResult<ArrayRef> {
+    let array = convert_value(value)?;
+    if array.is_null(0) {
+        return Err(PyValueError::new_err(
+            "attribute value is null; leave the key out instead",
+        ));
+    }
+    Ok(array)
+}
+
+fn convert_value(value: &Bound<'_, PyAny>) -> PyResult<ArrayRef> {
     let py = value.py();
     let np = py.import("numpy")?;
     // NumPy scalars come first: np.float64 is also a Python float.
