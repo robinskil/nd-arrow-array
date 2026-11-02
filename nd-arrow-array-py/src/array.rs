@@ -12,7 +12,7 @@ use crate::error::IntoPyResult;
 use crate::numpy_conv::{arrow_to_numpy, numpy_to_arrow};
 
 /// One N-dimensional array with named dimensions and attributes.
-#[pyclass(name = "NdArray", module = "nd_arrow_array", eq)]
+#[pyclass(name = "NdArray", module = "nd_arrow_array", eq, skip_from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyNdArray(pub NdArrowArray);
 

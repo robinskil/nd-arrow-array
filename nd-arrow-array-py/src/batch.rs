@@ -20,7 +20,7 @@ use crate::error::IntoPyResult;
 const STREAM_CAPSULE: &str = "arrow_array_stream";
 
 /// Named nd arrays on one shared grid, like an xarray `Dataset`.
-#[pyclass(name = "NdRecordBatch", module = "nd_arrow_array")]
+#[pyclass(name = "NdRecordBatch", module = "nd_arrow_array", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyNdRecordBatch(pub NdRecordBatch);
 

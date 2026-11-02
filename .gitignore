@@ -24,3 +24,4 @@ Cargo.lock
 *.pyd
 __pycache__/
 .venv/
+nd-arrow-array/tests/fixtures/python.arrow

@@ -10,7 +10,7 @@ use crate::arrow_conv::{export_array, export_schema, import_column, to_pyarrow};
 use crate::error::IntoPyResult;
 
 /// An Arrow column of the `nd_arrow.array` extension type. Each row is one array.
-#[pyclass(name = "NdColumn", module = "nd_arrow_array")]
+#[pyclass(name = "NdColumn", module = "nd_arrow_array", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyNdColumn(pub NdColumn);
 

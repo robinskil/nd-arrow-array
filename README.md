@@ -70,6 +70,35 @@ println!("{north}");
 
 Run it with `cargo run --example basic`.
 
+## Python
+
+The `nd-arrow-array-py` directory holds Python bindings. Build them with
+[maturin](https://www.maturin.rs/):
+
+```bash
+cd nd-arrow-array-py
+maturin develop
+```
+
+Create arrays from NumPy, group them in a record batch and send it to pyarrow:
+
+```python
+import numpy as np
+import nd_arrow_array as nda
+
+sst = nda.NdArray.from_numpy(
+    np.arange(6.0).reshape(2, 3), dims=["time", "lat"], attrs={"units": "K"}
+)
+lat = nda.NdArray.from_numpy(np.array([-10.0, 0.0, 10.0]), dims=["lat"])
+ds = nda.NdRecordBatch({"sst": sst, "lat": lat}, attrs={"title": "demo"})
+
+rb = ds.to_arrow()                       # pyarrow.RecordBatch, one row
+(back,) = nda.NdRecordBatch.from_arrow(rb)
+back["sst"].to_numpy()                   # (2, 3) ndarray
+```
+
+See [nd-arrow-array-py/README.md](nd-arrow-array-py/README.md) for details.
+
 ## Interoperability
 
 - Conversion to and from the Arrow canonical tensor types.

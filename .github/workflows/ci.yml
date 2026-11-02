@@ -47,3 +47,31 @@ jobs:
         run: |
           python tests/fixtures/gen_numpy.py
           cargo test --test numpy
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nd-arrow-array-py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            nd-arrow-array
+            nd-arrow-array-py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m venv .venv
+      - run: .venv/bin/pip install maturin pytest numpy pyarrow
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: .venv/bin/maturin develop
+      - run: .venv/bin/pytest
+      - name: Read the Python fixture in Rust
+        working-directory: nd-arrow-array
+        run: cargo test --test python_fixture
