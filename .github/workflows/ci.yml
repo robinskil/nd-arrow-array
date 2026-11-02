@@ -7,7 +7,7 @@ on:
 
 defaults:
   run:
-    working-directory: nd-arrow-array
+    working-directory: nd-arrow
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,7 +22,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow-array
+          workspaces: nd-arrow
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
@@ -38,7 +38,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow-array
+          workspaces: nd-arrow
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: nd-arrow-array-py
+        working-directory: nd-arrow-py
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -61,8 +61,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            nd-arrow-array
-            nd-arrow-array-py
+            nd-arrow
+            nd-arrow-py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -73,9 +73,9 @@ jobs:
       - run: .venv/bin/maturin develop
       - run: .venv/bin/pytest
       - name: Check the type stubs against the module
-        run: .venv/bin/python -m mypy.stubtest nd_arrow_array
+        run: .venv/bin/python -m mypy.stubtest nd_arrow
       - name: Type-check the stub usage
         run: .venv/bin/mypy --strict --warn-unused-ignores tests/typing
       - name: Read the Python fixture in Rust
-        working-directory: nd-arrow-array
+        working-directory: nd-arrow
         run: cargo test --test python_fixture

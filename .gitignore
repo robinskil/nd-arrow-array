@@ -24,7 +24,7 @@ Cargo.lock
 *.pyd
 __pycache__/
 .venv/
-nd-arrow-array/tests/fixtures/python.arrow
+nd-arrow/tests/fixtures/python.arrow
 
 # Local design notes
 docs/superpowers/
