@@ -20,9 +20,7 @@ pub fn to_py_err(error: NdError) -> PyErr {
         | NdError::ShapeMismatch(_)
         | NdError::InvalidAttribute(_)
         | NdError::InvalidArgument(_) => PyValueError::new_err(message),
-        NdError::SchemaMismatch(_) | NdError::InvalidEncoding(_) => {
-            NdFormatError::new_err(message)
-        }
+        NdError::SchemaMismatch(_) | NdError::InvalidEncoding(_) => NdFormatError::new_err(message),
         NdError::NotSupported(_) => PyTypeError::new_err(message),
         NdError::Arrow(_) => PyRuntimeError::new_err(message),
     }
