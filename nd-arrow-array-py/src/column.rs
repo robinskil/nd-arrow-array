@@ -3,9 +3,10 @@
 use nd_arrow_array::{NdColumn, NdColumnBuilder};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyCapsule, PyList, PyTuple};
 
 use crate::array::PyNdArray;
+use crate::arrow_conv::{export_array, export_schema, import_column, to_pyarrow};
 use crate::error::IntoPyResult;
 
 /// An Arrow column of the `nd_arrow.array` extension type. Each row is one array.
@@ -23,6 +24,36 @@ impl PyNdColumn {
             builder.append_option(item.as_ref().map(|a| &a.0)).py()?;
         }
         Ok(Self(builder.finish().py()?))
+    }
+
+    /// A column from an Arrow array with `__arrow_c_array__`.
+    #[staticmethod]
+    fn from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self(import_column(obj)?))
+    }
+
+    /// The column as a pyarrow array.
+    fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_pyarrow(
+            py,
+            self.0.to_field("nd"),
+            self.0.clone().into_array_ref(),
+            "NdColumn.to_arrow",
+        )
+    }
+
+    #[pyo3(signature = (requested_schema=None))]
+    fn __arrow_c_array__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
+        let _ = requested_schema;
+        export_array(py, &self.0.to_field("nd"), &self.0.clone().into_array_ref())
+    }
+
+    fn __arrow_c_schema__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyCapsule>> {
+        export_schema(py, &self.0.to_field("nd"))
     }
 
     /// The number of null rows.

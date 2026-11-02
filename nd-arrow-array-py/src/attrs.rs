@@ -12,6 +12,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
+use crate::arrow_conv::{import_array, to_pyarrow};
 use crate::error::IntoPyResult;
 use crate::numpy_conv::{arrow_to_numpy, numpy_to_arrow};
 
@@ -94,6 +95,12 @@ pub fn value_to_arrow(value: &Bound<'_, PyAny>) -> PyResult<ArrayRef> {
         let (values, _) = numpy_to_arrow(&arr)?;
         return Ok(list_of(values));
     }
+    if let Ok(pa) = py.import("pyarrow")
+        && value.is_instance(&pa.getattr("Scalar")?)?
+    {
+        let array = pa.call_method1("array", (vec![value.clone()], value.getattr("type")?))?;
+        return Ok(import_array(&array)?.1);
+    }
     Err(PyTypeError::new_err(format!(
         "unsupported attribute type {}",
         value.get_type().name()?
@@ -125,7 +132,17 @@ pub fn value_to_python<'py>(py: Python<'py>, value: &ArrayRef) -> PyResult<Bound
             arrow_to_numpy(py, &items, &[items.len()])
         }
         // Other types become a NumPy scalar, so the dtype stays.
-        _ => arrow_to_numpy(py, value, &[])?.get_item(()),
+        _ => match arrow_to_numpy(py, value, &[]) {
+            Ok(scalar) => scalar.get_item(()),
+            // Types without a NumPy dtype use the pyarrow Python value.
+            Err(e) if e.is_instance_of::<PyTypeError>(py) => {
+                let field = Field::new("value", value.data_type().clone(), true);
+                to_pyarrow(py, field, value.clone(), "this attribute type")?
+                    .get_item(0)?
+                    .call_method0("as_py")
+            }
+            Err(e) => Err(e),
+        },
     }
 }
 

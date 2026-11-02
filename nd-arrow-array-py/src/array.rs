@@ -1,11 +1,12 @@
 //! The `NdArray` Python class.
 
-use arrow::datatypes::{DataType, TimeUnit};
-use nd_arrow_array::{Dimension, Dimensions, NdArrowArray};
+use arrow::datatypes::{DataType, Field, TimeUnit};
+use nd_arrow_array::{Dimension, Dimensions, NdArrowArray, NdColumn};
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
+use crate::arrow_conv::{export_array, import_array, to_pyarrow};
 use crate::attrs::{attributes_to_dict, dict_to_attributes, value_to_arrow};
 use crate::error::IntoPyResult;
 use crate::numpy_conv::{arrow_to_numpy, numpy_to_arrow};
@@ -17,6 +18,19 @@ pub struct PyNdArray(pub NdArrowArray);
 
 #[pymethods]
 impl PyNdArray {
+    /// An array from flat Arrow values in C order and named dimensions.
+    #[new]
+    #[pyo3(signature = (values, dims, attrs=None))]
+    fn new(
+        values: &Bound<'_, PyAny>,
+        dims: &Bound<'_, PyAny>,
+        attrs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let (_, values) = import_array(values)?;
+        let array = NdArrowArray::try_new(values, parse_dims(dims)?).py()?;
+        Ok(Self(array.with_attributes(dict_to_attributes(attrs)?)))
+    }
+
     /// An array from a NumPy array, with one dimension name per axis.
     #[staticmethod]
     #[pyo3(signature = (arr, dims, attrs=None))]
@@ -114,6 +128,27 @@ impl PyNdArray {
     /// The values as a NumPy array, masked when nulls exist.
     fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         arrow_to_numpy(py, self.0.values(), &self.0.shape())
+    }
+
+    /// The flat values in C order, as a pyarrow array.
+    #[getter]
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let values = self.0.values().clone();
+        let field = Field::new("values", values.data_type().clone(), true);
+        to_pyarrow(py, field, values, "NdArray.values")
+    }
+
+    /// Export as a one-row nd column.
+    #[pyo3(signature = (requested_schema=None))]
+    fn __arrow_c_array__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
+        let _ = requested_schema;
+        let column = NdColumn::try_from_arrays([&self.0]).py()?;
+        let field = column.to_field("nd");
+        export_array(py, &field, &column.into_array_ref())
     }
 
     fn __repr__(&self) -> String {
