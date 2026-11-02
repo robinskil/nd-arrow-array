@@ -1,0 +1,19 @@
+[package]
+name = "nd-arrow-array-py"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Python bindings for nd-arrow-array"
+license = "Apache-2.0"
+repository = "https://github.com/robinskil/nd-arrow-array"
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+nd-arrow-array = { path = "../nd-arrow-array" }
+arrow = { version = "58.4", default-features = false, features = ["ffi"] }
+pyo3 = { version = "0.28", features = ["abi3-py39", "extension-module"] }
+numpy = "0.28"
