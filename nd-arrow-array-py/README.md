@@ -50,10 +50,13 @@ nda.NdColumn.from_arrow(arr)[0] == a    # True
 - `attrs` returns a copy. Assign a new dict, or use `set_attr` and `del_attr`.
 - All classes implement the Arrow PyCapsule interface, so pyarrow, polars
   and DuckDB can read them.
+- The package ships type stubs (`py.typed`), so mypy and pyright check calls.
 
 ## Test
 
 ```bash
-pip install pytest numpy pyarrow
+pip install pytest mypy numpy pyarrow
 maturin develop && pytest
+python -m mypy.stubtest nd_arrow_array          # stubs match the module
+mypy --strict --warn-unused-ignores tests/typing
 ```

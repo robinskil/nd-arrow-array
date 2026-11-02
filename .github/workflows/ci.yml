@@ -67,11 +67,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m venv .venv
-      - run: .venv/bin/pip install maturin pytest numpy pyarrow
+      - run: .venv/bin/pip install maturin pytest mypy numpy pyarrow
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: .venv/bin/maturin develop
       - run: .venv/bin/pytest
+      - name: Check the type stubs against the module
+        run: .venv/bin/python -m mypy.stubtest nd_arrow_array
+      - name: Type-check the stub usage
+        run: .venv/bin/mypy --strict --warn-unused-ignores tests/typing
       - name: Read the Python fixture in Rust
         working-directory: nd-arrow-array
         run: cargo test --test python_fixture
