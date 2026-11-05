@@ -28,3 +28,6 @@ nd-arrow/tests/fixtures/python.arrow
 
 # Local design notes
 docs/superpowers/
+
+# macOS Finder metadata
+.DS_Store
