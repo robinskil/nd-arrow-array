@@ -1,7 +1,7 @@
 //! The `NdArray` Python class.
 
 use arrow::datatypes::{DataType, Field, TimeUnit};
-use nd_arrow::{Dimension, Dimensions, NdArrowArray, NdColumn};
+use nd_arrow_array::{Dimension, Dimensions, NdArrowArray, NdColumn};
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
@@ -12,7 +12,7 @@ use crate::error::IntoPyResult;
 use crate::numpy_conv::{arrow_to_numpy, numpy_to_arrow};
 
 /// One N-dimensional array with named dimensions and attributes.
-#[pyclass(name = "NdArray", module = "nd_arrow", eq, skip_from_py_object)]
+#[pyclass(name = "NdArray", module = "nd_arrow_array", eq, skip_from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyNdArray(pub NdArrowArray);
 
@@ -130,6 +130,18 @@ impl PyNdArray {
         arrow_to_numpy(py, self.0.values(), &self.0.shape())
     }
 
+    /// The array as an `xarray.DataArray`. Nulls become NaN or NaT.
+    #[pyo3(signature = (name=None))]
+    fn to_xarray<'py>(slf: &Bound<'py, Self>, name: Option<&str>) -> PyResult<Bound<'py, PyAny>> {
+        call_xarray(slf.py(), "array_to_xarray", (slf, name))
+    }
+
+    /// An array from an `xarray.DataArray`. Coordinates are not kept.
+    #[staticmethod]
+    fn from_xarray<'py>(data_array: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        call_xarray(data_array.py(), "array_from_xarray", (data_array,))
+    }
+
     /// The flat values in C order, as a pyarrow array.
     #[getter]
     fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -154,6 +166,17 @@ impl PyNdArray {
     fn __repr__(&self) -> String {
         self.0.to_string()
     }
+}
+
+/// Call `func` of the Python module `nd_arrow_array._xarray`.
+pub fn call_xarray<'py>(
+    py: Python<'py>,
+    func: &str,
+    args: impl pyo3::call::PyCallArgs<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    py.import("nd_arrow_array._xarray")?
+        .getattr(func)?
+        .call1(args)
 }
 
 /// Dimensions from a dict or a sequence of `(name, size)` pairs.

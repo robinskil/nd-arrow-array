@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from nd_arrow import _core
+from nd_arrow_array import _core
 
 
 def test_scalars():

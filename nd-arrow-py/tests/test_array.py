@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import nd_arrow as nda
+import nd_arrow_array as nda
 
 
 def make():

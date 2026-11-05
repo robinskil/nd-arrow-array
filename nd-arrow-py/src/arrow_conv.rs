@@ -6,8 +6,8 @@ use std::sync::Arc;
 use arrow::array::{Array, ArrayData, ArrayRef, StructArray, make_array};
 use arrow::datatypes::{DataType, Field};
 use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi, to_ffi};
-use nd_arrow::NdColumn;
-use nd_arrow::tensor::column_from_field;
+use nd_arrow_array::NdColumn;
+use nd_arrow_array::tensor::column_from_field;
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyTuple};
@@ -108,7 +108,7 @@ pub fn import_column(obj: &Bound<'_, PyAny>) -> PyResult<NdColumn> {
 pub fn pyarrow<'py>(py: Python<'py>, feature: &str) -> PyResult<Bound<'py, PyModule>> {
     py.import("pyarrow").map_err(|_| {
         PyImportError::new_err(format!(
-            "pyarrow is required for {feature}: pip install nd-arrow-py[arrow]"
+            "pyarrow is required for {feature}: pip install nd-arrow-array[arrow]"
         ))
     })
 }
@@ -125,7 +125,7 @@ pub fn to_pyarrow<'py>(
 }
 
 /// A field and an array that export through `__arrow_c_array__`.
-#[pyclass(name = "_ArrowExport", module = "nd_arrow")]
+#[pyclass(name = "_ArrowExport", module = "nd_arrow_array")]
 pub struct ArrowExport {
     field: Field,
     array: ArrayRef,

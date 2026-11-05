@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use arrow::array::Float64Array;
 use criterion::{Criterion, criterion_group, criterion_main};
-use nd_arrow::compute::{self, Selector, Slice};
-use nd_arrow::{Dimensions, NdArrowArray};
+use nd_arrow_array::compute::{self, Selector, Slice};
+use nd_arrow_array::{Dimensions, NdArrowArray};
 
 fn grid(time: usize, lat: usize, lon: usize) -> NdArrowArray {
     let n = time * lat * lon;

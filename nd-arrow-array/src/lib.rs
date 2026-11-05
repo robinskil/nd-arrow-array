@@ -21,10 +21,10 @@
 //! use std::sync::Arc;
 //!
 //! use arrow::array::Float64Array;
-//! use nd_arrow::compute::{Selector, Slice};
-//! use nd_arrow::{Attributes, Dimensions, NdArrowArray, NdColumn};
+//! use nd_arrow_array::compute::{Selector, Slice};
+//! use nd_arrow_array::{Attributes, Dimensions, NdArrowArray, NdColumn};
 //!
-//! # fn main() -> nd_arrow::Result<()> {
+//! # fn main() -> nd_arrow_array::Result<()> {
 //! let sst = NdArrowArray::try_new(
 //!     Arc::new(Float64Array::from(vec![10.0, 11.0, 12.0, 14.0, 15.0, 16.0])),
 //!     Dimensions::try_new([("time", 2), ("lat", 3)])?,

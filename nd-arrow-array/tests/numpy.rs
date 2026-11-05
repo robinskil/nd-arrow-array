@@ -6,8 +6,8 @@ use std::sync::Arc;
 use arrow::array::{Array, AsArray, Float64Array};
 use arrow::compute::cast;
 use arrow::datatypes::{DataType, Float64Type};
-use nd_arrow::compute::{self, SearchSide};
-use nd_arrow::{Dimensions, NdArrowArray};
+use nd_arrow_array::compute::{self, SearchSide};
+use nd_arrow_array::{Dimensions, NdArrowArray};
 use serde_json::Value;
 
 fn array(value: &Value) -> NdArrowArray {

@@ -7,7 +7,7 @@ use std::path::Path;
 use arrow::array::{Array, AsArray};
 use arrow::datatypes::{DataType, Float32Type, Float64Type, Int32Type, TimeUnit};
 use arrow::ipc::reader::FileReader;
-use nd_arrow::NdRecordBatch;
+use nd_arrow_array::NdRecordBatch;
 
 #[test]
 fn reads_python_fixture() {

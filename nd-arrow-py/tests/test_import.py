@@ -1,4 +1,4 @@
-import nd_arrow as nda
+import nd_arrow_array as nda
 
 
 def test_import_exposes_error():

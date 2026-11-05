@@ -7,12 +7,12 @@ use arrow::array::{Array, RecordBatch, RecordBatchIterator, StructArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ffi::FFI_ArrowSchema;
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
-use nd_arrow::{NdArrowArray, NdRecordBatch, encode_batches};
+use nd_arrow_array::{NdArrowArray, NdRecordBatch, encode_batches};
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict};
 
-use crate::array::{PyNdArray, parse_dims};
+use crate::array::{PyNdArray, call_xarray, parse_dims};
 use crate::arrow_conv::{import_array, to_pyarrow};
 use crate::attrs::{attributes_to_dict, dict_to_attributes};
 use crate::error::IntoPyResult;
@@ -20,7 +20,7 @@ use crate::error::IntoPyResult;
 const STREAM_CAPSULE: &str = "arrow_array_stream";
 
 /// Named nd arrays on one shared grid, like an xarray `Dataset`.
-#[pyclass(name = "NdRecordBatch", module = "nd_arrow", skip_from_py_object)]
+#[pyclass(name = "NdRecordBatch", module = "nd_arrow_array", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyNdRecordBatch(pub NdRecordBatch);
 
@@ -53,6 +53,18 @@ impl PyNdRecordBatch {
         }
         .py()?;
         Ok(Self(batch.with_attributes(dict_to_attributes(attrs)?)))
+    }
+
+    /// A batch from an `xarray.Dataset` or `xarray.DataArray`. Coordinates
+    /// become columns, and CF `coordinates` attributes mark the non-index ones.
+    #[staticmethod]
+    fn from_xarray<'py>(dataset: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        call_xarray(dataset.py(), "batch_from_xarray", (dataset,))
+    }
+
+    /// The batch as an `xarray.Dataset`. Nulls become NaN or NaT.
+    fn to_xarray<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        call_xarray(slf.py(), "batch_to_xarray", (slf,))
     }
 
     /// Decode every row of an nd-encoded record batch, table or stream.

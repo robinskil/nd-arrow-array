@@ -77,6 +77,11 @@ class NdArray:
     def reshape(self, dims: _Dims) -> NdArray: ...
     def to_numpy(self) -> npt.NDArray[Any]:
         """A numpy.ndarray, or a numpy.ma.MaskedArray when nulls exist."""
+    def to_xarray(self, name: Optional[str] = None) -> Any:
+        """An xarray.DataArray. Nulls become NaN or NaT. Needs xarray."""
+    @staticmethod
+    def from_xarray(data_array: Any) -> NdArray:
+        """An array from an xarray.DataArray, without coordinates. Needs xarray."""
     def __arrow_c_array__(self, requested_schema: Any = None) -> Tuple[Any, Any]: ...
     def __eq__(self, other: object, /) -> bool: ...
     def __ne__(self, other: object, /) -> bool: ...
@@ -124,6 +129,11 @@ class NdRecordBatch:
     def __len__(self) -> int: ...
     def to_arrow(self) -> Any:
         """The batch as a one-row pyarrow.RecordBatch. Needs pyarrow."""
+    def to_xarray(self) -> Any:
+        """An xarray.Dataset. Nulls become NaN or NaT. Needs xarray."""
+    @staticmethod
+    def from_xarray(dataset: Any) -> NdRecordBatch:
+        """A batch from an xarray.Dataset or DataArray, with coordinates. Needs xarray."""
     def __arrow_c_stream__(self, requested_schema: Any = None) -> Any: ...
     def __arrow_c_schema__(self) -> Any: ...
 

@@ -1,4 +1,4 @@
-//! Python bindings for nd-arrow.
+//! Python bindings for nd-arrow-array.
 
 mod array;
 mod arrow_conv;

@@ -3,7 +3,7 @@ requires = ["maturin>=1.5,<2"]
 build-backend = "maturin"
 
 [project]
-name = "nd-arrow-py"
+name = "nd-arrow-array"
 version = "0.1.0"
 description = "N-dimensional Arrow arrays: Python bindings"
 license = { text = "Apache-2.0" }
@@ -14,9 +14,10 @@ classifiers = ["Typing :: Typed"]
 
 [project.optional-dependencies]
 arrow = ["pyarrow>=14"]
-test = ["pytest", "pyarrow>=14", "mypy"]
+xarray = ["xarray>=2023.1", "cftime>=1.6"]
+test = ["pytest", "pyarrow>=14", "xarray>=2023.1", "cftime>=1.6", "mypy"]
 
 [tool.maturin]
 python-source = "python"
-module-name = "nd_arrow._core"
+module-name = "nd_arrow_array._core"
 features = ["pyo3/extension-module"]

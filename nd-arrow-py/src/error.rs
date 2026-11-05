@@ -1,12 +1,12 @@
 //! Map nd errors to Python exceptions.
 
-use nd_arrow::NdError;
+use nd_arrow_array::NdError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 
 create_exception!(
-    _core,
+    nd_arrow_array,
     NdFormatError,
     PyValueError,
     "Data does not follow the nd_arrow.array format."
@@ -32,7 +32,7 @@ pub trait IntoPyResult<T> {
     fn py(self) -> pyo3::PyResult<T>;
 }
 
-impl<T> IntoPyResult<T> for nd_arrow::Result<T> {
+impl<T> IntoPyResult<T> for nd_arrow_array::Result<T> {
     fn py(self) -> pyo3::PyResult<T> {
         self.map_err(to_py_err)
     }

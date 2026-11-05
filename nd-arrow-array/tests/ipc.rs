@@ -5,8 +5,8 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
-use nd_arrow::extension::{is_global_attributes_field, is_nd_field};
-use nd_arrow::{
+use nd_arrow_array::extension::{is_global_attributes_field, is_nd_field};
+use nd_arrow_array::{
     Attributes, Dimensions, NdArrayType, NdArrowArray, NdColumn, NdRecordBatch, encode_batches,
 };
 

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use arrow::array::Float64Array;
-use nd_arrow::compute::{Selector, Slice};
-use nd_arrow::{Attributes, Dimensions, NdArrowArray};
+use nd_arrow_array::compute::{Selector, Slice};
+use nd_arrow_array::{Attributes, Dimensions, NdArrowArray};
 
-fn main() -> nd_arrow::Result<()> {
+fn main() -> nd_arrow_array::Result<()> {
     // A (time=2, lat=3) array of temperatures, flat in C order.
     let sst = NdArrowArray::try_new(
         Arc::new(Float64Array::from(vec![10.0, 12.0, 14.0, 11.0, 13.0, 15.0])),

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the `nd-arrow` crate are in this file.
+All notable changes to the `nd-arrow-array` crate are in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The crate follows [Semantic Versioning](https://semver.org/).
 Before 1.0, a minor version can break the API.

@@ -1,4 +1,4 @@
-# nd-arrow
+# nd-arrow-array
 
 N-dimensional arrays as an Arrow extension type, with NumPy-style kernels.
 
@@ -27,7 +27,7 @@ Nulls in `values` are missing elements. Rank 0 is a scalar.
 
 ## Kernels
 
-`nd_arrow::compute` follows NumPy and xarray semantics. Axes are
+`nd_arrow_array::compute` follows NumPy and xarray semantics. Axes are
 addressed by name, and broadcasting aligns axes by name. Reductions skip
 nulls, like the NumPy `nan*` functions. The kernels cover:
 
@@ -48,8 +48,8 @@ first two latitudes:
 use std::sync::Arc;
 
 use arrow::array::Float64Array;
-use nd_arrow::compute::{Selector, Slice};
-use nd_arrow::{Attributes, Dimensions, NdArrowArray};
+use nd_arrow_array::compute::{Selector, Slice};
+use nd_arrow_array::{Attributes, Dimensions, NdArrowArray};
 
 let sst = NdArrowArray::try_new(
     Arc::new(Float64Array::from(vec![10.0, 12.0, 14.0, 11.0, 13.0, 15.0])),
@@ -72,8 +72,8 @@ Run it with `cargo run --example basic`.
 
 ## Python
 
-The `nd-arrow-py` directory holds Python bindings. Build them with
-[maturin](https://www.maturin.rs/):
+The `nd-arrow-py` directory holds the Python package `nd-arrow-array`
+(`import nd_arrow_array`). Build it with [maturin](https://www.maturin.rs/):
 
 ```bash
 cd nd-arrow-py
@@ -84,7 +84,7 @@ Create arrays from NumPy, group them in a record batch and send it to pyarrow:
 
 ```python
 import numpy as np
-import nd_arrow as nda
+import nd_arrow_array as nda
 
 sst = nda.NdArray.from_numpy(
     np.arange(6.0).reshape(2, 3), dims=["time", "lat"], attrs={"units": "K"}

@@ -3,12 +3,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import nd_arrow as nda
+import nd_arrow_array as nda
 
 pa = pytest.importorskip("pyarrow")
 
-# The Rust test nd-arrow/tests/python_fixture.rs reads this file.
-FIXTURE = Path(__file__).resolve().parents[2] / "nd-arrow" / "tests" / "fixtures" / "python.arrow"
+# The Rust test nd-arrow-array/tests/python_fixture.rs reads this file.
+FIXTURE = Path(__file__).resolve().parents[2] / "nd-arrow-array" / "tests" / "fixtures" / "python.arrow"
 
 
 def dataset():

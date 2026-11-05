@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use arrow::array::{AsArray, Int64Array};
 use arrow::datatypes::Int64Type;
-use nd_arrow::compute::{self, PartialReduction, Reduction, Selector, Slice, merge_all};
-use nd_arrow::{Dimensions, NdArrowArray, NdColumn};
+use nd_arrow_array::compute::{self, PartialReduction, Reduction, Selector, Slice, merge_all};
+use nd_arrow_array::{Dimensions, NdArrowArray, NdColumn};
 use proptest::prelude::*;
 
 const NAMES: [&str; 4] = ["a", "b", "c", "d"];
@@ -112,7 +112,7 @@ proptest! {
 
     #[test]
     fn column_encoding_round_trips(rows in prop::collection::vec(prop::option::of(arrays()), 1..6)) {
-        let mut builder = nd_arrow::NdColumnBuilder::with_value_type(arrow::datatypes::DataType::Int64);
+        let mut builder = nd_arrow_array::NdColumnBuilder::with_value_type(arrow::datatypes::DataType::Int64);
         for row in &rows {
             builder.append_option(row.as_ref()).unwrap();
         }

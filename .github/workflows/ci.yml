@@ -11,7 +11,7 @@ permissions:
 
 defaults:
   run:
-    working-directory: nd-arrow
+    working-directory: nd-arrow-array
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,7 +26,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow
+          workspaces: nd-arrow-array
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
@@ -48,7 +48,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow
+          workspaces: nd-arrow-array
       - run: cargo test --all-features
 
   msrv:
@@ -63,7 +63,7 @@ jobs:
           toolchain: ${{ steps.msrv.outputs.version }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow
+          workspaces: nd-arrow-array
       - run: cargo check --all-features --lib
 
   semver:
@@ -73,13 +73,13 @@ jobs:
       - name: Check if a version is on crates.io
         id: published
         run: |
-          status=$(curl -s -o /dev/null -w '%{http_code}' -A "nd-arrow-ci" https://crates.io/api/v1/crates/nd-arrow)
+          status=$(curl -s -o /dev/null -w '%{http_code}' -A "nd-arrow-ci" https://crates.io/api/v1/crates/nd-arrow-array)
           echo "found=$([ "$status" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # Fails when the API breaks and Cargo.toml has no matching version bump.
       - if: steps.published.outputs.found == 'true'
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          manifest-path: nd-arrow/Cargo.toml
+          manifest-path: nd-arrow-array/Cargo.toml
           feature-group: all-features
 
   audit:
@@ -100,7 +100,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nd-arrow
+          workspaces: nd-arrow-array
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -123,21 +123,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            nd-arrow
+            nd-arrow-array
             nd-arrow-py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m venv .venv
-      - run: .venv/bin/pip install maturin pytest mypy numpy pyarrow
+      - run: .venv/bin/pip install maturin pytest mypy numpy pyarrow xarray cftime
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: .venv/bin/maturin develop
       - run: .venv/bin/pytest
       - name: Check the type stubs against the module
-        run: .venv/bin/python -m mypy.stubtest nd_arrow
+        run: .venv/bin/python -m mypy.stubtest nd_arrow_array
       - name: Type-check the stub usage
         run: .venv/bin/mypy --strict --warn-unused-ignores tests/typing
       - name: Read the Python fixture in Rust
-        working-directory: nd-arrow
+        working-directory: nd-arrow-array
         run: cargo test --test python_fixture

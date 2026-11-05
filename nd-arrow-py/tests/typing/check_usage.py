@@ -6,7 +6,7 @@ from typing import Any, Optional
 import numpy as np
 import numpy.typing as npt
 
-import nd_arrow as nda
+import nd_arrow_array as nda
 
 if sys.version_info >= (3, 11):
     from typing import assert_type
@@ -39,3 +39,6 @@ nda.NdArray.from_numpy(np.zeros(2), dims=["x"], attrs={"u": object()})  # type: 
 nda.NdColumn.from_arrays([a, 1])  # type: ignore[list-item]
 nda.NdRecordBatch({"sst": np.zeros(2)})  # type: ignore[dict-item]
 ds[0]  # type: ignore[index]
+
+assert_type(nda.NdArray.from_xarray(a.to_xarray(name="a")), nda.NdArray)
+assert_type(nda.NdRecordBatch.from_xarray(object()), nda.NdRecordBatch)
