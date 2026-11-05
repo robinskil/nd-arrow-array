@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag `vX.Y.Z` to publish version X.Y.Z to crates.io and PyPI.
+# Push a tag `vX.Y.Z`, or create a GitHub release with that tag, to publish to crates.io and PyPI.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -140,11 +140,16 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Create the GitHub release
+      - name: Create the GitHub release or add the files to it
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
+          # A release made by hand on GitHub keeps its own notes.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            exit 0
+          fi
           awk -v v="$VERSION" '
             index($0, "## [" v "]") == 1 { on = 1; next }
             on && /^## \[/ { exit }
