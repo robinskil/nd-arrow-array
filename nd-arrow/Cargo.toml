@@ -6,6 +6,12 @@ rust-version = "1.85"
 description = "N-dimensional Arrow arrays as an Arrow extension type"
 license = "Apache-2.0"
 repository = "https://github.com/robinskil/nd-arrow-array"
+readme = "../README.md"
+keywords = ["arrow", "ndarray", "tensor", "xarray", "netcdf"]
+categories = ["data-structures", "science", "encoding"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 arrow = { version = "58.4", default-features = false }

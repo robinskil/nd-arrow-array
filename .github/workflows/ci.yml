@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -30,6 +34,64 @@ jobs:
       - run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: Check that the crate packages
+        run: cargo package
+
+  test-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nd-arrow
+      - run: cargo test --all-features
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nd-arrow
+      - run: cargo check --all-features --lib
+
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check if a version is on crates.io
+        id: published
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -A "nd-arrow-ci" https://crates.io/api/v1/crates/nd-arrow)
+          echo "found=$([ "$status" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # Fails when the API breaks and Cargo.toml has no matching version bump.
+      - if: steps.published.outputs.found == 'true'
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          manifest-path: nd-arrow/Cargo.toml
+          feature-group: all-features
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo generate-lockfile
+      - run: cargo audit
 
   latest-numpy:
     runs-on: ubuntu-latest
