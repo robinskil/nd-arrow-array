@@ -3,15 +3,17 @@
 Python bindings for the `nd_arrow.array` Arrow extension type.
 The PyPI package is `nd-arrow-array`. The import name is `nd_arrow_array`.
 The bindings move N-dimensional arrays between NumPy, pyarrow and the
-format in [FORMAT.md](../FORMAT.md).
+format in [FORMAT.md](https://github.com/robinskil/nd-arrow-array/blob/main/FORMAT.md).
 
 ## Install
 
 ```bash
-pip install maturin
-maturin develop            # in this directory
-pip install pyarrow        # optional, for to_arrow() and values
+pip install nd-arrow-array            # NumPy only
+pip install nd-arrow-array[arrow]     # with pyarrow
+pip install nd-arrow-array[xarray]    # with xarray and cftime
 ```
+
+To build from source, run `pip install maturin` and `maturin develop` in this directory.
 
 ## Classes
 
@@ -45,7 +47,7 @@ nda.NdColumn.from_arrow(arr)[0] == a    # True
 
 `pip install nd-arrow-array[arrow]` adds pyarrow. pyarrow sees an nd column as a
 `struct` column. The field metadata `ARROW:extension:name = nd_arrow.array`
-marks it as an nd column. See [FORMAT.md](../FORMAT.md).
+marks it as an nd column. See [FORMAT.md](https://github.com/robinskil/nd-arrow-array/blob/main/FORMAT.md).
 
 ### Arrays and columns
 

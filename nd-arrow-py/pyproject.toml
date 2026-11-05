@@ -4,13 +4,26 @@ build-backend = "maturin"
 
 [project]
 name = "nd-arrow-array"
-version = "0.1.0"
-description = "N-dimensional Arrow arrays: Python bindings"
+# maturin takes the version from Cargo.toml.
+dynamic = ["version"]
+description = "N-dimensional Arrow arrays with named dimensions and attributes"
 license = { text = "Apache-2.0" }
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.21"]
-classifiers = ["Typing :: Typed"]
+keywords = ["arrow", "ndarray", "xarray", "netcdf", "tensor"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/robinskil/nd-arrow-array"
+Format = "https://github.com/robinskil/nd-arrow-array/blob/main/FORMAT.md"
+Changelog = "https://github.com/robinskil/nd-arrow-array/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 arrow = ["pyarrow>=14"]

@@ -1,5 +1,7 @@
 """N-dimensional Arrow arrays."""
 
+from importlib.metadata import version as _version
+
 from ._core import NdArray, NdColumn, NdFormatError, NdRecordBatch, encode_batches
 
 __all__ = [
@@ -9,4 +11,4 @@ __all__ = [
     "NdRecordBatch",
     "encode_batches",
 ]
-__version__ = "0.1.0"
+__version__ = _version("nd-arrow-array")
